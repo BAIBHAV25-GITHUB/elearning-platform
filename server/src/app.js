@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import pool from './config/db.js';
 
 dotenv.config();
 
@@ -24,6 +25,25 @@ app.get('/api/v1/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+app.get('/api/v1/health/db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW() AS current_time, current_database() AS db_name;');
+    res.status(200).json({
+      status: 'ok',
+      message: 'Database Connection Successful',
+      database: result.rows[0].db_name,
+      serverTime: result.rows[0].current_time
+    });
+  } catch (error) {
+    console.error('[DB HEALTH CHECK FAILED]:', error.message);
+    res.status(500).json({
+      status: 'error',
+      message: 'Database Connection Failed',
+      error: error.message
+    });
+  }
 });
 
 // 404 Handler for Unmatched Routes
