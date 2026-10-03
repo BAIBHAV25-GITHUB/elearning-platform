@@ -85,3 +85,25 @@ export const updateCourseStatus = async (courseId, status) => {
   );
   return res.rows[0];
 };
+
+import { query } from '../config/db.js';
+
+export const getPublishedCoursesFromDb = async () => {
+  const res = await query(`
+    SELECT 
+      c.course_id, 
+      c.instructor_id, 
+      c.title, 
+      c.description, 
+      c.price, 
+      c.thumbnail_url, 
+      c.status, 
+      c.created_at,
+      u.user_name AS instructor_name
+    FROM courses c
+    JOIN users u ON c.instructor_id = u.user_id
+    WHERE c.status = 'published'
+    ORDER BY c.created_at DESC
+  `);
+  return res.rows;
+};
