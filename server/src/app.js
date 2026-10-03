@@ -5,6 +5,8 @@ import authRoutes from './routes/auth.routes.js';
 import courseRoutes from './routes/course.routes.js';
 import moduleRoutes from './routes/module.routes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
+import batchRoutes from './routes/batch.routes.js';
+import enrollmentRoutes from './routes/enrollment.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -22,6 +24,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/courses/:courseId/modules', moduleRoutes);
+app.use('/api/v1/courses/:courseId/batches', batchRoutes);
+app.use('/api/v1/enrollments', enrollmentRoutes);
 app.use(errorHandler);
 
 export default app;

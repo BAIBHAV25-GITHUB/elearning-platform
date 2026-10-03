@@ -30,17 +30,17 @@ export const getCoursesByInstructorId = async (instructorId) => {
 /**
  * Day 9: Fetch published courses for the public student catalog
  */
-export const getAllCourses = async () => {
-  const res = await query(`
-    SELECT c.course_id, c.instructor_id, c.title, c.description, c.price, c.thumbnail_url, c.status, c.created_at,
-           u.name AS instructor_name
-    FROM courses c
-    JOIN users u ON c.instructor_id = u.user_id
-    WHERE c.status = 'published'
-    ORDER BY c.created_at DESC
-  `);
-  return res.rows;
-};
+// export const getAllCourses = async () => {
+//   const res = await query(`
+//     SELECT c.course_id, c.instructor_id, c.title, c.description, c.price, c.thumbnail_url, c.status, c.created_at,
+//            u.name AS instructor_name
+//     FROM courses c
+//     JOIN users u ON c.instructor_id = u.user_id
+//     WHERE c.status = 'published'
+//     ORDER BY c.created_at DESC
+//   `);
+//   return res.rows;
+// };
 
 /**
  * Day 8 & 9: Fetch course details by ID along with ordered content modules
@@ -107,3 +107,5 @@ export const getPublishedCoursesFromDb = async () => {
   `);
   return res.rows;
 };
+
+export const getAllCourses = getPublishedCoursesFromDb;

@@ -7,19 +7,35 @@ export default function CourseCatalog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const fetchCatalog = async () => {
-      try {
-        const res = await api.get('/v1/courses');
-        setCourses(res.data.courses || []);
-      } catch (err) {
-        setError(err.response?.data?.message || 'Failed to load courses');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCatalog();
-  }, []);
+  // useEffect(() => {
+  //   const fetchCatalog = async () => {
+  //     try {
+  //       const res = await api.get('/v1/courses');
+  //       setCourses(res.data.courses || []);
+  //     } catch (err) {
+  //       setError(err.response?.data?.message || 'Failed to load courses');
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   };
+  //   fetchCatalog();
+  // }, []);
+
+  // Fix in client/src/pages/student/CourseCatalog.jsx
+useEffect(() => {
+  const fetchCatalog = async () => {
+    try {
+      const res = await api.get('/courses'); // Correct path relative to baseURL
+      const coursesData = Array.isArray(res.data) ? res.data : (res.data.courses || []);
+      setCourses(coursesData);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load courses');
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchCatalog();
+}, []);
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading catalog...</div>;
 
