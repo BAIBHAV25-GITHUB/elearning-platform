@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import authRoutes from './routes/auth.routes.js';
 import courseRoutes from './routes/course.routes.js';
 import moduleRoutes from './routes/module.routes.js';
-import paymentRoutes from './routes/paymentRoutes.js';
+import paymentRoutes from './routes/payment.routes.js';
 import batchRoutes from './routes/batch.routes.js';
 import enrollmentRoutes from './routes/enrollment.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -15,13 +15,18 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/courses/:courseId/modules', moduleRoutes);
 app.use('/api/v1/courses/:courseId/batches', batchRoutes);

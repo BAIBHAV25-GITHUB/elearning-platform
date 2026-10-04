@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
 export default function CourseDetails() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [course, setCourse] = useState(null);
   const [batches, setBatches] = useState([]);
@@ -21,7 +22,7 @@ export default function CourseDetails() {
           api.get(`/courses/${id}`),
           api.get(`/courses/${id}/batches`)
         ]);
-        
+
         const courseData = courseRes.data.course || courseRes.data;
         setCourse(courseData);
         setBatches(batchesRes.data.batches || []);
@@ -51,7 +52,7 @@ export default function CourseDetails() {
 
   const handleEnroll = async () => {
     if (!selectedBatchId) {
-      setErrorMsg('Please select a batch before enrolling.');
+      setErrorMsg('Please select a batch before proceeding.');
       return;
     }
 
@@ -59,26 +60,26 @@ export default function CourseDetails() {
     setEnrolling(true);
 
     try {
-      // Step 1: Execute DB Enrollment Transaction (Day 14)
-      await api.post('/enrollments', {
+      // Step 1: Create pending enrollment transaction (Day 14)
+      const enrollRes = await api.post('/enrollments', {
         courseId: parseInt(id, 10),
         batchId: parseInt(selectedBatchId, 10)
       });
+      const enrollmentId = enrollRes.data.enrollmentId;
 
-      // Step 2: Trigger Razorpay Payment Flow
+      // Step 2: Load Razorpay Checkout Script
       const isLoaded = await loadRazorpayScript();
       if (!isLoaded) {
-        alert('Razorpay SDK failed to load');
+        setErrorMsg('Razorpay SDK failed to load');
         setEnrolling(false);
         return;
       }
 
-      const orderRes = await api.post('/payments/create-order', {
-        courseId: course.id || course.course_id,
-        batchId: selectedBatchId
-      });
+      // Step 3: Create Payment Order matching enrollment (Day 16)
+      const orderRes = await api.post('/payments/create-order', { enrollmentId });
       const { order, key_id } = orderRes.data;
 
+      // Step 4: Launch Razorpay Modal
       const options = {
         key: key_id,
         amount: order.amount,
@@ -87,17 +88,20 @@ export default function CourseDetails() {
         description: 'Course Enrollment Fee',
         order_id: order.id,
         handler: async (response) => {
-          await api.post('/payments/verify', {
-            courseId: course.id || course.course_id,
-            razorpayOrderId: response.razorpay_order_id,
-            razorpayPaymentId: response.razorpay_payment_id,
-            razorpaySignature: response.razorpay_signature,
-          });
-          alert('Enrollment & Payment Successful!');
-          window.location.reload();
+          try {
+            await api.post('/payments/verify', {
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            });
+            alert('Enrollment and Payment Successful!');
+            navigate('/student/dashboard');
+          } catch (err) {
+            setErrorMsg(err.response?.data?.message || 'Payment verification failed.');
+          }
         },
         prefill: {
-          name: user?.name,
+          name: user?.name || user?.userName,
           email: user?.email,
         },
       };
@@ -105,7 +109,7 @@ export default function CourseDetails() {
       const paymentObject = new window.Razorpay(options);
       paymentObject.open();
     } catch (err) {
-      setErrorMsg(err.response?.data?.message || 'Enrollment/Checkout failed');
+      setErrorMsg(err.response?.data?.message || 'Enrollment transaction failed');
     } finally {
       setEnrolling(false);
     }
@@ -118,7 +122,6 @@ export default function CourseDetails() {
     <div className="max-w-7xl mx-auto px-6 py-10">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         
-        {/* Main Content: Video Preview & Course Details */}
         <div className="lg:col-span-2">
           {activeLesson ? (
             <div className="bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
@@ -135,7 +138,6 @@ export default function CourseDetails() {
           <p className="text-slate-600 mt-4 leading-relaxed">{course.description}</p>
         </div>
 
-        {/* Sidebar: Price, Batch Selection & Enroll */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-100 h-fit space-y-6">
           <div className="text-3xl font-bold text-indigo-600">₹{course.price}</div>
 
@@ -145,13 +147,12 @@ export default function CourseDetails() {
             </div>
           )}
 
-          {/* Batch Selection UI */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
               Select Batch
             </h3>
             {batches.length === 0 ? (
-              <p className="text-xs text-slate-500 italic">No open batches available right now.</p>
+              <p className="text-xs text-slate-500 italic">No active batches available.</p>
             ) : (
               <div className="space-y-2">
                 {batches.map((batch) => {
@@ -192,16 +193,14 @@ export default function CourseDetails() {
             )}
           </div>
 
-          {/* Enroll Button */}
           <button
             onClick={handleEnroll}
             disabled={enrolling || batches.length === 0}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
           >
-            {enrolling ? 'Processing...' : 'Enroll Now'}
+            {enrolling ? 'Processing...' : 'Enroll & Pay'}
           </button>
 
-          {/* Course Content List */}
           <div>
             <h3 className="text-lg font-bold text-slate-800 mb-3">Course Content</h3>
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
