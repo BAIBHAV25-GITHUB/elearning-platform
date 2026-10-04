@@ -13,7 +13,9 @@ import commentRoutes from './routes/comment.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import announcementRoutes from './routes/announcement.routes.js';
 import { auditMiddleware } from './middleware/audit.middleware.js';
-import { errorHandler } from './middleware/errorHandler.js';
+import analyticsRoutes from './routes/analytics.routes.js';
+import { errorHandler } from './middleware/error.middleware.js';
+// import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
@@ -43,6 +45,7 @@ app.use('/api/v1', announcementRoutes);
 app.use('/api/v1/courses', auditMiddleware('courses'));
 app.use('/api/v1/enrollments', auditMiddleware('enrollments'));
 app.use('/api/v1/users', auditMiddleware('users'));
+app.use('/api/v1/analytics', analyticsRoutes);
 app.use(errorHandler);
 
 export default app;
