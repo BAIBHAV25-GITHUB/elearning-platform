@@ -9,3 +9,4 @@ export const getInstructorCoursesApi = async () => {
   const response = await api.get('/v1/courses/instructor');
   return response.data;
 };
+

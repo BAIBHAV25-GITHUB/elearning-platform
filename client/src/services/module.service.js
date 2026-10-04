@@ -9,3 +9,4 @@ export const createModuleApi = async (courseId, moduleData) => {
   const response = await api.post(`/v1/courses/${courseId}/modules`, moduleData);
   return response.data;
 };
+

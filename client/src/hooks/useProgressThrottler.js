@@ -30,3 +30,4 @@ export function useProgressThrottler(enrollmentId, contentId, onProgressUpdate) 
 
   return { sendHeartbeat };
 }
+
