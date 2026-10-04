@@ -7,6 +7,8 @@ import moduleRoutes from './routes/module.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import batchRoutes from './routes/batch.routes.js';
 import enrollmentRoutes from './routes/enrollment.routes.js';
+import progressRoutes from './routes/progress.routes.js';
+import certificateRoutes from './routes/certificate.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
