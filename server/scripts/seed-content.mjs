@@ -1,11 +1,14 @@
 // Loads manifest.json (from upload-videos.mjs) into your Postgres tables:
-//   one content_modules row per lesson folder, one content row per 10-minute part.
+//   one content_modules row per lesson folder, ONE content row per lesson (the video), and its
+//   10-minute pieces in content_parts. Same layout the app's own upload produces:
+//     1 piece  -> content.video_url / cloudinary_id (no content_parts rows)
+//     N pieces -> content_parts rows, content.video_url stays NULL; content.duration_sec = total
 //
 // Lives in server/scripts/ (uses the server's node_modules and ../.env). Create the course in the
 // app first, then run from the server/ folder:
 //   node scripts/seed-content.mjs <courseId> path/to/manifest.json --dry   (prints the plan)
 //   node scripts/seed-content.mjs <courseId> path/to/manifest.json         (inserts)
-// Re-running is safe: a lesson whose first part is already in the DB is skipped.
+// Re-running is safe: a lesson whose first piece is already in the DB is skipped.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,9 +52,9 @@ if (dry) {
   lessonNames.forEach((name, i) => {
     const parts = lessons.get(name);
     n += parts.length;
-    console.log(`Module ${i + 1}: "${prettyTitle(name)}"  (${parts.length} parts)`);
+    console.log(`Module ${i + 1}: "${prettyTitle(name)}"  (1 video, ${parts.length} parts)`);
   });
-  console.log(`\n${lessonNames.length} modules, ${n} content rows would be created for course ${courseId}.`);
+  console.log(`\n${lessonNames.length} modules, ${lessonNames.length} videos (${n} parts) would be created for course ${courseId}.`);
   process.exit(0);
 }
 
@@ -79,7 +82,11 @@ try {
   for (const name of lessonNames) {
     const parts = lessons.get(name);
 
-    const exists = await client.query("SELECT 1 FROM content WHERE cloudinary_id = $1", [parts[0].public_id]);
+    const exists = await client.query(
+      `SELECT 1 FROM content WHERE cloudinary_id = $1
+       UNION ALL SELECT 1 FROM content_parts WHERE cloudinary_id = $1`,
+      [parts[0].public_id]
+    );
     if (exists.rowCount) {
       console.log(`SKIP ${name} (already in database)`);
       continue;
@@ -95,17 +102,24 @@ try {
       );
       const moduleId = m.rows[0].module_id;
 
-      let seq = 0;
-      for (const p of parts) {
-        seq += 1;
-        await client.query(
-          `INSERT INTO content (module_id, title, type, video_url, cloudinary_id, duration_sec, sequence_no, status)
-           VALUES ($1, $2, 'video', $3, $4, $5, $6, 'ready')`,
-          [moduleId, `${title} - Part ${seq}`, p.url, p.public_id, Math.round(p.duration || 0), seq]
-        );
+      const total = parts.reduce((t, p) => t + Math.round(p.duration || 0), 0);
+      const single = parts.length === 1;
+      const c = await client.query(
+        `INSERT INTO content (module_id, title, type, video_url, cloudinary_id, duration_sec, sequence_no, status)
+         VALUES ($1, $2, 'video', $3, $4, $5, 1, 'ready') RETURNING content_id`,
+        [moduleId, title, single ? parts[0].url : null, single ? parts[0].public_id : null, total]
+      );
+      if (!single) {
+        for (const [i, p] of parts.entries()) {
+          await client.query(
+            `INSERT INTO content_parts (content_id, part_no, video_url, cloudinary_id, duration_sec)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [c.rows[0].content_id, i + 1, p.url, p.public_id, Math.round(p.duration || 0)]
+          );
+        }
       }
       await client.query("COMMIT");
-      console.log(`OK   ${name} -> module ${moduleSeq}, ${parts.length} parts`);
+      console.log(`OK   ${name} -> module ${moduleSeq}, 1 video (${parts.length} parts)`);
     } catch (e) {
       await client.query("ROLLBACK");
       console.error(`FAIL ${name}:`, e.message);

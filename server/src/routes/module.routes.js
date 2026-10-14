@@ -3,7 +3,7 @@ import { authenticateJWT, optionalAuth } from '../middleware/auth.middleware.js'
 import { authorizeRoles } from '../middleware/role.middleware.js';
 import { requireCourseOwner } from '../middleware/courseAccess.middleware.js';
 import { createModule, getCourseModules } from '../controllers/module.controller.js';
-import { addContentToModule } from '../controllers/content.controller.js';
+import { addContentToModule, deleteContentFromModule } from '../controllers/content.controller.js';
 import { uploadSingleFile } from '../middleware/upload.middleware.js';
 
 const router = express.Router({ mergeParams: true });
@@ -14,5 +14,6 @@ router.get('/', optionalAuth, getCourseModules);
 router.post('/', ...owner, createModule);
 // ownership is checked BEFORE the upload middleware so a rejected user never uploads a file
 router.post('/:moduleId/content', ...owner, uploadSingleFile, addContentToModule);
+router.delete('/:moduleId/content/:contentId', ...owner, deleteContentFromModule);
 
 export default router;

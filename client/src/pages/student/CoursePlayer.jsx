@@ -5,12 +5,6 @@ import VideoPlayer from "../../components/video/VideoPlayer";
 import LessonPlayer from "../../components/video/LessonPlayer";
 import ModuleComments from "../../components/discussion/ModuleComments";
 
-// A module made only of several video parts (e.g. a long recording cut into 10-minute pieces)
-// is shown and played as ONE lesson. Anything else keeps the item-by-item behaviour.
-const isLesson = (m) =>
-  (m?.contents?.length || 0) > 1 &&
-  m.contents.every((c) => (c.type || "video") === "video" && (c.video_url || c.url));
-
 export default function CoursePlayer() {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -85,30 +79,6 @@ export default function CoursePlayer() {
       )
     : [];
 
-  // Lesson finished (its last part ended): move on to whatever comes next in the course.
-  const handleLessonEnded = () => {
-    if (!activeModule) return;
-    const lastId = activeModule.contents[activeModule.contents.length - 1].content_id;
-    const idx = allContents.findIndex((c) => (c.content_id || c.id) === lastId);
-    const next = allContents[idx + 1];
-    if (idx !== -1 && next) {
-      setAutoPlayNext(true);
-      setActiveContent(next);
-    }
-  };
-
-  // Time-weighted progress (0-100) of a multi-part lesson
-  const lessonProgress = (m) => {
-    let done = 0;
-    let all = 0;
-    for (const c of m.contents) {
-      const d = Number(c.duration_sec) || 0;
-      all += d;
-      done += completedContentIds.has(c.content_id) ? d : Math.min(positions[c.content_id] || 0, d);
-    }
-    return all ? Math.round((done / all) * 100) : 0;
-  };
-
   const handleVideoEnded = () => {
     if (!activeContent) return;
     const activeId = activeContent.content_id || activeContent.id;
@@ -127,8 +97,6 @@ export default function CoursePlayer() {
         (m.contents || []).some((c) => (c.content_id || c.id) === (activeContent.content_id || activeContent.id)),
       )
     : null;
-
-  const lessonMode = isLesson(activeModule);
 
   if (loading)
     return (
@@ -168,16 +136,17 @@ export default function CoursePlayer() {
         <div className="flex-1 p-6 overflow-y-auto">
           {activeContent ? (
             <div className="max-w-5xl mx-auto space-y-6">
-              {lessonMode ? (
+              {activeContent.parts?.length > 0 ? (
+                // A long video stored as pieces: plays as ONE video (one seek bar, one clock)
                 <LessonPlayer
-                  key={`lesson-${activeModule.module_id}`}
-                  parts={activeModule.contents}
+                  key={`video-${activeContent.content_id}`}
+                  parts={activeContent.parts}
                   enrollmentId={enrollment?.enrollment_id}
-                  positions={positions}
-                  completedIds={completedContentIds}
+                  contentId={activeContent.content_id}
                   onProgressUpdate={handleProgressUpdate}
-                  onEnded={handleLessonEnded}
+                  onEnded={handleVideoEnded}
                   autoPlay={autoPlayNext}
+                  startAt={completedContentIds.has(activeContent.content_id) ? 0 : positions[activeContent.content_id] || 0}
                 />
               ) : (
                 <VideoPlayer
@@ -192,13 +161,13 @@ export default function CoursePlayer() {
               )}
               <div>
                 <h2 className="text-2xl font-bold text-white">
-                  {lessonMode ? activeModule.title : activeContent.title}
+                  {activeContent.title}
                 </h2>
                 <p className="text-slate-400 mt-2">
-                  {(lessonMode ? activeModule.description : activeContent.description) || "No description provided."}
+                  {activeContent.description || "No description provided."}
                 </p>
               </div>
-              {activeModule && <ModuleComments key={`comments-${activeModule.module_id}`} moduleId={activeModule.module_id} />}
+              {activeModule && <ModuleComments key={activeModule.module_id} moduleId={activeModule.module_id} />}
             </div>
           ) : (
             <div className="text-center py-20 text-slate-400">
@@ -216,15 +185,17 @@ export default function CoursePlayer() {
             {(
               course.modules || []
             ).map((module, mIdx) => {
-              if (isLesson(module)) {
-                const pct = lessonProgress(module);
-                const isSelected = activeModule?.module_id === module.module_id;
+              // A module that is just one video with the module's own name (e.g. "Lesson 1")
+              // is shown as a single row instead of a header plus an identical item.
+              const only = module.contents?.length === 1 && module.contents[0].title === module.title ? module.contents[0] : null;
+              if (only) {
+                const isSelected = activeContent && (activeContent.content_id || activeContent.id) === only.content_id;
                 return (
                   <button
                     key={module.module_id || mIdx}
                     onClick={() => {
                       setAutoPlayNext(false);
-                      setActiveContent(module.contents[0]);
+                      setActiveContent(only);
                     }}
                     className={`w-full text-left px-3 py-2.5 rounded-md text-sm font-medium flex items-center justify-between transition ${
                       isSelected ? "bg-indigo-600 text-white" : "bg-slate-900/50 hover:bg-slate-700 text-slate-300"
@@ -233,12 +204,14 @@ export default function CoursePlayer() {
                     <span className="truncate pr-2">
                       {mIdx + 1}. {module.title}
                     </span>
-                    {pct >= 100 ? (
+                    {completedContentIds.has(only.content_id) ? (
                       <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800 text-xs">
                         ✓ Done
                       </span>
-                    ) : pct > 0 ? (
-                      <span className="text-xs text-slate-300">{pct}%</span>
+                    ) : positions[only.content_id] > 0 && only.duration_sec > 0 ? (
+                      <span className="text-xs text-slate-300">
+                        {Math.min(99, Math.round((positions[only.content_id] / only.duration_sec) * 100))}%
+                      </span>
                     ) : null}
                   </button>
                 );

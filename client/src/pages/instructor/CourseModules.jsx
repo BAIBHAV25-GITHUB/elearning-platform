@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getCourseModulesApi, createModuleApi } from '../../services/module.service';
+import { getCourseModulesApi, createModuleApi, deleteContentApi } from '../../services/module.service';
 import api from '../../api/axios';
 import CourseTools from '../../components/instructor/CourseTools';
 
@@ -33,6 +33,22 @@ export default function CourseModules() {
       setLoading(false);
     }
   };
+
+  // While any video is still being processed on the server, re-check every 5 seconds
+  // (silently: no loading flicker) so it flips to Ready / Failed by itself.
+  const anyProcessing = modules.some((m) => (m.contents || []).some((c) => c.status === 'processing' || c.status === 'uploading'));
+  useEffect(() => {
+    if (!anyProcessing) return;
+    const timer = setInterval(async () => {
+      try {
+        const data = await getCourseModulesApi(courseId);
+        setModules(data.modules || []);
+      } catch {
+        /* keep the last list; try again next tick */
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [anyProcessing, courseId]);
 
   useEffect(() => {
     // fetch on mount / course change (state is set after the await, not synchronously)
@@ -115,6 +131,23 @@ export default function CourseModules() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDeleteContent = async (moduleId, c) => {
+    if (!window.confirm(`Delete "${c.title}"? The video file is removed permanently and students lose their progress on it.`)) return;
+    setError('');
+    try {
+      await deleteContentApi(courseId, moduleId, c.content_id);
+      await fetchModules();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete content');
+    }
+  };
+
+  const fmtDuration = (sec) => {
+    const m = Math.round(sec / 60);
+    if (m < 60) return `${Math.max(1, m)} min`;
+    return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
   };
 
   if (loading) return <div className="p-8 text-center text-slate-500">Loading course modules...</div>;
@@ -242,7 +275,7 @@ export default function CourseModules() {
                         value={contentType}
                         onChange={(e) => setContentType(e.target.value)}
                       >
-                        <option value="video">Video (MP4, MKV, WEBM)</option>
+                        <option value="video">Video (MP4, MKV, MOV, WEBM)</option>
                         <option value="pdf">Document (PDF)</option>
                       </select>
                     </div>
@@ -258,11 +291,18 @@ export default function CourseModules() {
                     </div>
                   </div>
 
+                  {contentType === 'video' && (
+                    <p className="text-xs text-slate-500">
+                      Upload the whole video as one file. It is compressed and prepared automatically after the upload,
+                      which can take a while for long videos. You can leave this page; it will show as Ready when done.
+                    </p>
+                  )}
+
                   {/* Real-time Axios Progress Bar */}
                   {uploading && (
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs font-semibold text-slate-600">
-                        <span>Uploading file to Cloudinary...</span>
+                        <span>{uploadProgress >= 100 ? 'Finishing up...' : 'Uploading video to the server...'}</span>
                         <span>{uploadProgress}%</span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2">
@@ -293,15 +333,37 @@ export default function CourseModules() {
                   <p className="text-xs text-gray-400 italic">No media content uploaded for this module yet.</p>
                 ) : (
                   m.contents.map((c) => (
-                    <div key={c.content_id} className="flex items-center justify-between bg-slate-50 p-2.5 rounded border text-xs">
+                    <div key={c.content_id} className="flex items-center justify-between gap-2 bg-slate-50 p-2.5 rounded border text-xs">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-indigo-600">#{c.sequence_no}</span>
                         <span className="font-semibold text-slate-800">{c.title}</span>
                         <span className="text-slate-400">({c.type})</span>
                       </div>
-                      <span className="text-slate-500 font-mono">
-                        {c.duration_sec ? `${Math.round(c.duration_sec / 60)} mins` : 'Ready'}
-                      </span>
+                      {c.status === 'processing' || c.status === 'uploading' ? (
+                        <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-medium">
+                          Processing... (compressing &amp; preparing)
+                        </span>
+                      ) : c.status === 'error' ? (
+                        <span
+                          className="text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded font-medium max-w-xs truncate"
+                          title={c.error_message || 'Processing failed'}
+                        >
+                          Failed: {c.error_message || 'processing failed, upload again'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 font-mono">
+                          {c.duration_sec ? fmtDuration(c.duration_sec) : 'Ready'}
+                        </span>
+                      )}
+                      {c.status !== 'processing' && c.status !== 'uploading' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteContent(m.module_id, c)}
+                          className="text-red-600 hover:bg-red-50 border border-red-200 px-2 py-0.5 rounded font-medium shrink-0"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   ))
                 )}

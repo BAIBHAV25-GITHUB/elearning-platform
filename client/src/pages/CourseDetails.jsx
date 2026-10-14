@@ -215,14 +215,8 @@ export default function CourseDetails() {
                 course.modules.map((m, mIdx) => (
                   <div key={m.module_id} className="bg-slate-50 rounded-lg p-3">
                     <div className="text-sm font-semibold text-slate-800">{mIdx + 1}. {m.title}</div>
-                    {(m.contents || []).length > 1 && m.contents.every((c) => c.type === 'video') ? (
-                      // Many parts of one recording: show a single line, not "Part 1..Part N"
-                      <p className="mt-1 text-xs text-slate-500 px-2">
-                        {Math.round(m.contents.reduce((t, c) => t + (c.duration_sec || 0), 0) / 60)} min video
-                      </p>
-                    ) : (
                     <ul className="mt-1 space-y-0.5">
-                      {(m.contents || []).map((c) => (
+                      {(m.contents?.length === 1 && m.contents[0].title === m.title ? [] : m.contents || []).map((c) => (
                         <li
                           key={c.content_id}
                           onClick={() => c.video_url && setActiveLesson(c)}
@@ -234,7 +228,6 @@ export default function CourseDetails() {
                         </li>
                       ))}
                     </ul>
-                    )}
                   </div>
                 ))
               ) : (

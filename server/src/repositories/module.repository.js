@@ -38,7 +38,18 @@ export const findModulesByCourseId = async (
                        'duration_sec', ct.duration_sec,
                        'sequence_no',  ct.sequence_no,
                        'status',       ct.status,
-                       'video_url',    CASE WHEN $2::boolean THEN ct.video_url END
+                       'video_url',    CASE WHEN $2::boolean THEN ct.video_url END,
+                       'error_message', ct.error_message,
+                       -- pieces of a long video, in play order (only for people allowed to watch)
+                       'parts',        CASE WHEN $2::boolean THEN (
+                                         SELECT json_agg(json_build_object(
+                                                  'part_no',      cp.part_no,
+                                                  'video_url',    cp.video_url,
+                                                  'duration_sec', cp.duration_sec
+                                                ) ORDER BY cp.part_no)
+                                           FROM content_parts cp
+                                          WHERE cp.content_id = ct.content_id)
+                                       END
                      ) ORDER BY ct.sequence_no)
                 FROM content ct
                WHERE ct.module_id = m.module_id

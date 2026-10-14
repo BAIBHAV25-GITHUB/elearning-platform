@@ -76,7 +76,7 @@ SELECT c.course_id, v.title, v.description, v.sequence_no
  ORDER BY v.ord;
 
 -- 6. Content Items (demo URLs are placeholders; replace with real Cloudinary uploads
---    or load real lessons with server/seed-content.mjs)
+--    or load real lessons with server/scripts/seed-content.mjs)
 INSERT INTO content (module_id, title, type, video_url, cloudinary_id, duration_sec, sequence_no, status)
 SELECT m.module_id, v.title, v.type::content_type_enum, v.video_url, v.cloudinary_id, v.duration_sec, v.sequence_no, 'ready'
   FROM (VALUES

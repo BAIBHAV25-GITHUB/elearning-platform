@@ -44,4 +44,11 @@ export const env = {
   razorpayKeySecret: e.RAZORPAY_KEY_SECRET,
   razorpayWebhookSecret: e.RAZORPAY_WEBHOOK_SECRET,
   pendingEnrollmentMinutes: Number(e.PENDING_ENROLLMENT_MINUTES) || 30,
+  // Video uploads: one big file in, compressed and cut into pieces that fit Cloudinary's free-plan
+  // 100 MB-per-video limit (see services/videoProcessing.service.js).
+  maxVideoUploadMb: Number(e.MAX_VIDEO_UPLOAD_MB) || 4096,
+  videoPartSeconds: Number(e.VIDEO_PART_SECONDS) || 600,
+  videoMaxHeight: Number(e.VIDEO_MAX_HEIGHT) || 480,
+  videoCrf: Number(e.VIDEO_CRF) || 30,
+  videoMaxPartMb: Number(e.VIDEO_MAX_PART_MB) || 95,
 };

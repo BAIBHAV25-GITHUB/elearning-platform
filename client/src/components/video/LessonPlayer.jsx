@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Maximize, Volume2, VolumeX, RotateCcw, RotateCw } from "lucide-react";
 import { useProgressThrottler } from "../../hooks/useProgressThrottler";
 
-// Plays several consecutive video parts (one `content` row each) as ONE continuous video:
-//   * one seek bar / one clock covering the whole lesson
-//   * the next part is preloaded while the current one plays, so the hand-over is seamless
-//   * progress is still saved per part (same API / DB rules as before)
-// Parts are expected in order, each with { content_id, video_url, duration_sec }.
+// Plays the pieces of ONE long video (rows of content_parts) as a single continuous video:
+//   * one seek bar / one clock covering the whole video
+//   * the next piece is preloaded while the current one plays, so the hand-over is seamless
+//   * progress is saved for the whole video (position = seconds from the very start)
+// `parts` are in order, each { video_url, duration_sec }.
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -21,8 +21,8 @@ const fmt = (sec) => {
 export default function LessonPlayer({
   parts,
   enrollmentId,
-  positions = {},
-  completedIds = new Set(),
+  contentId,
+  startAt = 0, // resume position, in seconds from the start of the whole video
   onProgressUpdate,
   onEnded,
   autoPlay = false,
@@ -35,12 +35,12 @@ export default function LessonPlayer({
     total += durOf(p);
   });
 
-  // Where to start: first part not finished yet (at its saved position); a finished lesson restarts at 0.
+  // Resume where the student stopped; a (nearly) finished video restarts from the top.
   const [start] = useState(() => {
-    const i = parts.findIndex((p) => !completedIds.has(p.content_id));
-    if (i === -1) return { idx: 0, local: 0 };
-    const saved = positions[parts[i].content_id] || 0;
-    return { idx: i, local: saved > 0 && saved < durOf(parts[i]) - 5 ? saved : 0 };
+    if (!(startAt > 0) || startAt >= total - 5) return { idx: 0, local: 0 };
+    let i = 0;
+    for (let k = 0; k < parts.length; k++) if (offsets[k] <= startAt) i = k;
+    return { idx: i, local: startAt - offsets[i] };
   });
 
   const [idx, setIdx] = useState(start.idx);
@@ -59,8 +59,7 @@ export default function LessonPlayer({
   const shouldPlay = useRef(autoPlay);
   const box = useRef(null);
 
-  const part = parts[idx];
-  const { sendHeartbeat } = useProgressThrottler(enrollmentId, part?.content_id, onProgressUpdate);
+  const { sendHeartbeat } = useProgressThrottler(enrollmentId, contentId, onProgressUpdate);
 
   const active = () => els.current[idxRef.current];
 
@@ -107,7 +106,7 @@ export default function LessonPlayer({
       setCurrent(local);
     } else {
       const v = active();
-      if (v) sendHeartbeat(v.currentTime, true); // save where we left the old part
+      if (v) sendHeartbeat(offsets[idxRef.current] + v.currentTime, true); // save where we left
       pendingSeek.current = local;
       shouldPlay.current = playing;
       setCurrent(local);
@@ -148,7 +147,7 @@ export default function LessonPlayer({
     onTimeUpdate: (e) => {
       if (p !== idxRef.current) return;
       setCurrent(e.currentTarget.currentTime);
-      sendHeartbeat(e.currentTarget.currentTime, false);
+      sendHeartbeat(offsets[p] + e.currentTarget.currentTime, false);
     },
     onPlay: () => p === idxRef.current && setPlaying(true),
     onPlaying: () => p === idxRef.current && setWaiting(false),
@@ -156,11 +155,11 @@ export default function LessonPlayer({
     onPause: (e) => {
       if (p !== idxRef.current || e.currentTarget.ended) return;
       setPlaying(false);
-      sendHeartbeat(e.currentTarget.currentTime, true);
+      sendHeartbeat(offsets[p] + e.currentTarget.currentTime, true);
     },
     onEnded: (e) => {
       if (p !== idxRef.current) return;
-      sendHeartbeat(e.currentTarget.currentTime, true);
+      sendHeartbeat(offsets[p] + e.currentTarget.currentTime, true);
       if (p < parts.length - 1) {
         shouldPlay.current = true;
         pendingSeek.current = 0;
@@ -186,7 +185,7 @@ export default function LessonPlayer({
     >
       {mounted.map((p) => (
         <video
-          key={parts[p].content_id}
+          key={`${contentId}-${p}`}
           ref={(el) => {
             if (el) els.current[p] = el;
             else delete els.current[p];

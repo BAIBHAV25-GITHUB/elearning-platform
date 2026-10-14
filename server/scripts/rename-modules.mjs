@@ -1,4 +1,4 @@
-// Renames + reorders modules that were ALREADY loaded by seed-content.mjs, using scripts/module-titles.json.
+// Renames + reorders modules that were ALREADY loaded by scripts/seed-content.mjs, using scripts/module-titles.json.
 // Run from the server/ folder:
 //   node scripts/rename-modules.mjs <courseId> manifest.json --dry   (shows what would change)
 //   node scripts/rename-modules.mjs <courseId> manifest.json
@@ -39,8 +39,12 @@ try {
     const fp = firstPart.get(t.folder);
     if (!fp) { console.log(`skip ${t.folder}: not in manifest`); continue; }
     const r = await client.query(
-      `SELECT m.module_id FROM content ct JOIN content_modules m ON m.module_id = ct.module_id
-        WHERE ct.cloudinary_id = $1 AND m.course_id = $2`, [fp.id, courseId]);
+      `SELECT m.module_id FROM content_modules m
+        WHERE m.course_id = $2
+          AND EXISTS (SELECT 1 FROM content ct WHERE ct.module_id = m.module_id AND ct.cloudinary_id = $1
+                      UNION ALL
+                      SELECT 1 FROM content ct JOIN content_parts cp ON cp.content_id = ct.content_id
+                       WHERE ct.module_id = m.module_id AND cp.cloudinary_id = $1)`, [fp.id, courseId]);
     if (!r.rowCount) { console.log(`skip ${t.folder}: not loaded in course ${courseId}`); continue; }
     plan.push({ moduleId: r.rows[0].module_id, title: t.title, seq: plan.length + 1, folder: t.folder });
   }
@@ -52,7 +56,7 @@ try {
   for (const p of plan) {
     await client.query("UPDATE content_modules SET title = $2, sequence_no = $3 WHERE module_id = $1", [p.moduleId, p.title, p.seq]);
     await client.query(
-      `UPDATE content SET title = $2 || ' - Part ' || sequence_no WHERE module_id = $1`, [p.moduleId, p.title]);
+      `UPDATE content SET title = $2 WHERE module_id = $1 AND type = 'video'`, [p.moduleId, p.title]);
   }
   // modules not in the titles file keep their relative order after the renamed ones
   await client.query(

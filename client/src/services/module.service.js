@@ -10,3 +10,7 @@ export const createModuleApi = async (courseId, moduleData) => {
   return response.data;
 };
 
+export const deleteContentApi = async (courseId, moduleId, contentId) => {
+  const response = await api.delete(`/courses/${courseId}/modules/${moduleId}/content/${contentId}`);
+  return response.data;
+};

@@ -12,7 +12,11 @@ const pool = new Pool({
   ssl: env.isProduction ? { rejectUnauthorized: false } : false,
 });
 
+// the pool opens several connections; announce only the first
+let announced = false;
 pool.on('connect', () => {
+  if (announced) return;
+  announced = true;
   console.log('PostgreSQL database connected successfully');
 });
 

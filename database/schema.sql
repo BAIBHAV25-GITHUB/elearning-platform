@@ -1,5 +1,5 @@
 -- PostgreSQL Schema for E-Learning Platform
--- 11 ENUM types, 17 tables, constraints and indexes.
+-- 11 ENUM types, 18 tables, constraints and indexes.
 --
 -- Run against an existing database (see 00_create_db.sql):
 --   psql -U postgres -d elearning_db -v ON_ERROR_STOP=1 -f schema.sql
@@ -108,9 +108,27 @@ CREATE TABLE content (
     duration_sec  INTEGER,
     sequence_no   SMALLINT NOT NULL,
     status        content_status_enum NOT NULL DEFAULT 'ready',
+    error_message TEXT,                      -- why processing failed (status = 'error')
     CONSTRAINT uq_content_seq UNIQUE (module_id, sequence_no),
     CONSTRAINT chk_content_seq CHECK (sequence_no > 0),
     CONSTRAINT chk_content_dur CHECK (duration_sec IS NULL OR duration_sec >= 0)
+);
+
+-- A video is ONE content row. Because the free Cloudinary plan caps a video file at
+-- 100 MB, the server compresses long uploads and cuts them into ~10-minute pieces;
+-- the pieces live here, in order. content.duration_sec is the TOTAL of all pieces, so
+-- progress / the 80 % rule / certificates work on the whole video.
+-- A video that fits in one file has no rows here (its URL is content.video_url).
+CREATE TABLE content_parts (
+    part_id       INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    content_id    INTEGER NOT NULL REFERENCES content(content_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    part_no       SMALLINT NOT NULL,
+    video_url     VARCHAR(512) NOT NULL,
+    cloudinary_id VARCHAR(255) NOT NULL,
+    duration_sec  INTEGER NOT NULL,
+    CONSTRAINT uq_content_part UNIQUE (content_id, part_no),
+    CONSTRAINT chk_part_no CHECK (part_no > 0),
+    CONSTRAINT chk_part_dur CHECK (duration_sec >= 0)
 );
 
 -- 4. Enrollment & Payments
@@ -240,6 +258,7 @@ CREATE INDEX idx_courses_status      ON courses(status);
 CREATE INDEX idx_batches_course      ON batches(course_id);
 CREATE INDEX idx_modules_course      ON content_modules(course_id);
 CREATE INDEX idx_content_module      ON content(module_id);
+CREATE INDEX idx_content_parts_content ON content_parts(content_id);
 CREATE INDEX idx_enrollments_student ON enrollments(student_id);
 CREATE INDEX idx_enrollments_course  ON enrollments(course_id);
 CREATE INDEX idx_enrollments_batch   ON enrollments(batch_id);
