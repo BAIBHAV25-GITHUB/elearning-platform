@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { formatPrice, formatDate } from '../utils/format';
 
 export default function CourseDetails() {
-  const { id } = useParams();
+  const { courseId: id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [course, setCourse] = useState(null);
@@ -27,9 +28,9 @@ export default function CourseDetails() {
         setCourse(courseData);
         setBatches(batchesRes.data.batches || []);
 
-        if (courseData.lessons?.length > 0) {
-          setActiveLesson(courseData.lessons[0]);
-        }
+        // preview the first lesson only if the server returned its URL (enrolled / owner)
+        const first = courseData.modules?.flatMap((m) => m.contents || []).find((c) => c.video_url);
+        if (first) setActiveLesson(first);
       } catch (err) {
         console.error('Failed to load course details:', err);
       } finally {
@@ -67,6 +68,12 @@ export default function CourseDetails() {
       });
       const enrollmentId = enrollRes.data.enrollmentId;
 
+      // Free course: the server already activated the enrollment, no payment step
+      if (enrollRes.data.requiresPayment === false) {
+        navigate(`/learn/${id}`);
+        return;
+      }
+
       // Step 2: Load Razorpay Checkout Script
       const isLoaded = await loadRazorpayScript();
       if (!isLoaded) {
@@ -95,7 +102,7 @@ export default function CourseDetails() {
               razorpaySignature: response.razorpay_signature,
             });
             alert('Enrollment and Payment Successful!');
-            navigate('/student/dashboard');
+            navigate(`/learn/${id}`);
           } catch (err) {
             setErrorMsg(err.response?.data?.message || 'Payment verification failed.');
           }
@@ -125,11 +132,11 @@ export default function CourseDetails() {
         <div className="lg:col-span-2">
           {activeLesson ? (
             <div className="bg-black rounded-xl overflow-hidden aspect-video shadow-lg">
-              <video src={activeLesson.video_url} controls className="w-full h-full" />
+              <video key={activeLesson.content_id} src={activeLesson.video_url} controls className="w-full h-full" />
             </div>
           ) : (
             <img
-              src={course.thumbnail_url || 'https://via.placeholder.com/600x350'}
+              src={course.thumbnail_url || '/favicon.svg'}
               alt={course.title}
               className="w-full h-96 object-cover rounded-xl"
             />
@@ -139,7 +146,7 @@ export default function CourseDetails() {
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-100 h-fit space-y-6">
-          <div className="text-3xl font-bold text-indigo-600">₹{course.price}</div>
+          <div className="text-3xl font-bold text-indigo-600">{formatPrice(course.price)}</div>
 
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg">
@@ -179,7 +186,7 @@ export default function CourseDetails() {
                         <div>
                           <div className="font-semibold">{batch.batch_name}</div>
                           <div className="text-xs text-slate-500">
-                            {new Date(batch.start_date).toLocaleDateString()}
+                            {formatDate(batch.start_date)} – {formatDate(batch.end_date)}
                           </div>
                         </div>
                       </div>
@@ -198,23 +205,41 @@ export default function CourseDetails() {
             disabled={enrolling || batches.length === 0}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
           >
-            {enrolling ? 'Processing...' : 'Enroll & Pay'}
+            {enrolling ? 'Processing...' : Number(course.price) === 0 ? 'Enroll for free' : 'Enroll & Pay'}
           </button>
 
           <div>
             <h3 className="text-lg font-bold text-slate-800 mb-3">Course Content</h3>
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {course.lessons?.map((lesson, idx) => (
-                <div
-                  key={lesson.id || idx}
-                  onClick={() => setActiveLesson(lesson)}
-                  className={`p-3 rounded-lg cursor-pointer text-sm font-medium transition ${
-                    activeLesson?.id === lesson.id ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {idx + 1}. {lesson.title}
-                </div>
-              ))}
+              {course.modules?.length ? (
+                course.modules.map((m, mIdx) => (
+                  <div key={m.module_id} className="bg-slate-50 rounded-lg p-3">
+                    <div className="text-sm font-semibold text-slate-800">{mIdx + 1}. {m.title}</div>
+                    {(m.contents || []).length > 1 && m.contents.every((c) => c.type === 'video') ? (
+                      // Many parts of one recording: show a single line, not "Part 1..Part N"
+                      <p className="mt-1 text-xs text-slate-500 px-2">
+                        {Math.round(m.contents.reduce((t, c) => t + (c.duration_sec || 0), 0) / 60)} min video
+                      </p>
+                    ) : (
+                    <ul className="mt-1 space-y-0.5">
+                      {(m.contents || []).map((c) => (
+                        <li
+                          key={c.content_id}
+                          onClick={() => c.video_url && setActiveLesson(c)}
+                          className={`text-xs px-2 py-1 rounded ${c.video_url ? 'cursor-pointer hover:bg-slate-100' : ''} ${
+                            activeLesson?.content_id === c.content_id ? 'text-indigo-600 font-semibold' : 'text-slate-600'
+                          }`}
+                        >
+                          {c.title}
+                        </li>
+                      ))}
+                    </ul>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-500 italic">No content published yet.</p>
+              )}
             </div>
           </div>
         </div>

@@ -15,9 +15,12 @@ export default function NotificationBell() {
   };
 
   useEffect(() => {
-    fetchNotifications();
+    const first = setTimeout(fetchNotifications, 0);
     const interval = setInterval(fetchNotifications, 60000); // refresh every 60s
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(first);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleMarkAsRead = async (id) => {

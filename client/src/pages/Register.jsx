@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { registerApi } from '../services/auth.service.js';
 import { useAuth } from '../context/AuthContext';
 
 export default function Register() {
@@ -9,21 +8,15 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('student');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     try {
-      const data = await registerApi({ userName, email, password, role });
-      login(data.user, data.token);
-
-      if (data.user.role === 'instructor') {
-        navigate('/instructor/dashboard');
-      } else {
-        navigate('/student/dashboard');
-      }
+      const user = await register(userName, email, password, role);
+      navigate(user.role === 'instructor' ? '/instructor/courses' : '/');
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');
     }

@@ -1,10 +1,11 @@
 import express from 'express';
 import { getAnalyticsSummary } from '../controllers/analytics.controller.js';
 import { authenticateJWT } from '../middleware/auth.middleware.js';
+import { authorizeRoles } from '../middleware/role.middleware.js';
 
 const router = express.Router();
 
-// Protected route for Instructors and Admins
-router.get('/overview', authenticateJWT, getAnalyticsSummary);
+// Instructors (own courses only) and Admins (everything)
+router.get('/overview', authenticateJWT, authorizeRoles('instructor', 'admin'), getAnalyticsSummary);
 
 export default router;

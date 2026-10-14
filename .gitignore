@@ -17,3 +17,6 @@ client/.env
 .DS_Store
 .vscode/
 *.log
+
+# Zips
+zips/

@@ -1,57 +1,68 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import * as userRepository from '../repositories/user.repository.js';
+import { env } from '../config/env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
+const httpError = (message, statusCode) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+// DB row (user_id, user_name, ...) -> shape the client reads (id, name, ...)
+const toPublicUser = (row) => ({
+  id: row.user_id,
+  name: row.user_name,
+  email: row.email,
+  role: row.role,
+});
+
+const signToken = (user) =>
+  jwt.sign({ id: user.id, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
 
 export const registerUser = async ({ name, email, password, role }) => {
-  const existingUser = await userRepository.findUserByEmail(email);
-  if (existingUser) {
-    const error = new Error('Email already registered');
-    error.statusCode = 400;
-    throw error;
+  if (!name || !email || !password) {
+    throw httpError('Name, email and password are required', 400);
   }
 
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
 
-  const newUser = await userRepository.createUser({
-    name,
-    email,
-    passwordHash,
-    role,
-  });
+  let row;
+  try {
+    row = await userRepository.createUser({ name, email, passwordHash, role });
+  } catch (err) {
+    if (err.code === '23505') throw httpError('Email already registered', 400);
+    if (err.code === '23514') throw httpError('Invalid email address', 400); // chk_users_email
+    if (err.code === 'P0001') throw httpError(err.message, 400); // e.g. role not self-registerable
+    throw err;
+  }
 
-  const token = jwt.sign(
-    { id: newUser.user_id, role: newUser.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  return { user: newUser, token };
+  const user = toPublicUser(row);
+  return { user, token: signToken(user) };
 };
 
 export const loginUser = async ({ email, password }) => {
-  const user = await userRepository.findUserByEmail(email);
-  if (!user) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+  if (!email || !password) {
+    throw httpError('Email and password are required', 400);
   }
 
-  const isMatch = await bcrypt.compare(password, user.password_hash);
-  if (!isMatch) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
-  }
+  const row = await userRepository.findUserByEmail(email);
+  if (!row) throw httpError('Invalid email or password', 401);
 
-  const token = jwt.sign(
-    { id: user.user_id, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+  const isMatch = await bcrypt.compare(password, row.password);
+  if (!isMatch) throw httpError('Invalid email or password', 401);
 
-  const { password_hash, ...userData } = user;
-  return { user: userData, token };
+  if (row.status !== 'active') throw httpError('Account is not active', 403);
+  if (!row.role) throw httpError('Account has no role assigned', 403);
+
+  const user = toPublicUser(row);
+  return { user, token: signToken(user) };
+};
+
+/** For GET /auth/me (S0g). */
+export const getCurrentUser = async (userId) => {
+  const row = await userRepository.findUserById(userId);
+  if (!row || row.status !== 'active') throw httpError('User not found', 404);
+  return toPublicUser(row);
 };

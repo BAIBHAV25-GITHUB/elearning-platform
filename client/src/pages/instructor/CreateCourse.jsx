@@ -6,6 +6,7 @@ export default function CreateCourse() {
   const [courseName, setCourseName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState(0);
+  const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ export default function CreateCourse() {
     setLoading(true);
 
     try {
-      await createCourseApi({ courseName, description, price: Number(price) });
+      await createCourseApi({ courseName, description, price: Number(price), thumbnailUrl: thumbnailUrl.trim() || undefined });
       navigate('/instructor/courses');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create course');
@@ -55,7 +56,7 @@ export default function CreateCourse() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Price (USD / INR)</label>
+          <label className="block text-sm font-medium mb-1">Price (INR, 0 for free)</label>
           <input
             type="number"
             min="0"
@@ -64,6 +65,17 @@ export default function CreateCourse() {
             className="w-full border rounded px-3 py-2"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Thumbnail image URL (optional)</label>
+          <input
+            type="url"
+            className="w-full border rounded px-3 py-2"
+            value={thumbnailUrl}
+            onChange={(e) => setThumbnailUrl(e.target.value)}
+            placeholder="https://..."
           />
         </div>
 

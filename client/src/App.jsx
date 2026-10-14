@@ -1,34 +1,3 @@
-// import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-// import { AuthProvider } from './context/AuthContext';
-// import Navbar from './components/Navbar';
-// import ProtectedRoute from './components/ProtectedRoute';
-// import Login from './pages/Login';
-// import Register from './pages/Register';
-// import CourseCatalog from './pages/CourseCatalog';
-// import CourseDetails from './pages/CourseDetails';
-
-
-// export default function App() {
-//   return (
-//     <AuthProvider>
-//       <Router>
-//         <div className="min-h-screen bg-slate-50 text-slate-900">
-//           <Navbar />
-//           <Routes>
-//             <Route path="/" element={<CourseCatalog />} />
-//             <Route path="/login" element={<Login />} />
-//             <Route path="/register" element={<Register />} />
-            
-//             <Route element={<ProtectedRoute />}>
-//               <Route path="/courses/:id" element={<CourseDetails />} />
-//             </Route>
-//           </Routes>
-//         </div>
-//       </Router>
-//     </AuthProvider>
-//   );
-// }
-
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
@@ -46,6 +15,11 @@ import CourseDetails from './pages/CourseDetails';
 import CourseList from './pages/instructor/CourseList';
 import CreateCourse from './pages/instructor/CreateCourse';
 import CourseModules from './pages/instructor/CourseModules';
+import Analytics from './pages/instructor/Analytics';
+import CoursePlayer from './pages/student/CoursePlayer';
+import Certificates from './pages/student/Certificates';
+import CertificateView from './pages/student/CertificateView';
+import MyLearning from './pages/student/MyLearning';
 
 export default function App() {
   return (
@@ -68,6 +42,15 @@ export default function App() {
               <Route path="/instructor/courses" element={<CourseList />} />
               <Route path="/instructor/courses/new" element={<CreateCourse />} />
               <Route path="/instructor/courses/:courseId/modules" element={<CourseModules />} />
+              <Route path="/instructor/analytics" element={<Analytics />} />
+            </Route>
+
+            {/* Protected Student Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/learn/:courseId" element={<CoursePlayer />} />
+              <Route path="/student/certificates" element={<Certificates />} />
+              <Route path="/student/certificates/:certificateId" element={<CertificateView />} />
+              <Route path="/my-learning" element={<MyLearning />} />
             </Route>
           </Routes>
         </div>

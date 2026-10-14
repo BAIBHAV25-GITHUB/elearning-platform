@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api/axios';
+import { formatDate } from '../../utils/format';
 
 export default function Certificates() {
   const [certificates, setCertificates] = useState([]);
@@ -45,18 +47,16 @@ export default function Certificates() {
                   Issued to <span className="font-medium text-slate-700">{cert.student_name}</span>
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Issued on: {new Date(cert.issued_at).toLocaleDateString()}
+                  Issued on: {formatDate(cert.issued_at)}
                 </p>
               </div>
               <div className="p-4 bg-slate-50 border-t border-slate-100">
-                <a
-                  href={cert.certificate_url || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  to={`/student/certificates/${cert.certificate_id}`}
                   className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition"
                 >
-                  View / Download Certificate
-                </a>
+                  View / Print Certificate
+                </Link>
               </div>
             </div>
           ))}

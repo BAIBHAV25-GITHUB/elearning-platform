@@ -1,0 +1,210 @@
+[
+  {
+    "folder": "00001",
+    "title": "Lesson 1"
+  },
+  {
+    "folder": "00002",
+    "title": "Lesson 2"
+  },
+  {
+    "folder": "00003",
+    "title": "Lesson 3"
+  },
+  {
+    "folder": "00004",
+    "title": "Lesson 4"
+  },
+  {
+    "folder": "00005",
+    "title": "Lesson 5"
+  },
+  {
+    "folder": "00006",
+    "title": "Lesson 6"
+  },
+  {
+    "folder": "00007",
+    "title": "Lesson 7"
+  },
+  {
+    "folder": "0008",
+    "title": "Lesson 8"
+  },
+  {
+    "folder": "0009",
+    "title": "Lesson 9"
+  },
+  {
+    "folder": "00010",
+    "title": "Lesson 10"
+  },
+  {
+    "folder": "00011",
+    "title": "Lesson 11"
+  },
+  {
+    "folder": "00012",
+    "title": "Lesson 12"
+  },
+  {
+    "folder": "00013",
+    "title": "Lesson 13"
+  },
+  {
+    "folder": "00014",
+    "title": "Lesson 14"
+  },
+  {
+    "folder": "00015",
+    "title": "Lesson 15"
+  },
+  {
+    "folder": "00016",
+    "title": "Lesson 16"
+  },
+  {
+    "folder": "00017",
+    "title": "Lesson 17"
+  },
+  {
+    "folder": "18-intro-to-problem-solving",
+    "title": "Introduction to Problem Solving"
+  },
+  {
+    "folder": "19-Time-Complexity-1",
+    "title": "Time Complexity 1"
+  },
+  {
+    "folder": "20-Time-Complexity-2",
+    "title": "Time Complexity 2"
+  },
+  {
+    "folder": "21-Sorting-and-searching",
+    "title": "Sorting and Searching"
+  },
+  {
+    "folder": "22-Intro-to-Arays",
+    "title": "Introduction to Arrays"
+  },
+  {
+    "folder": "23-Arrays---prefix-sum",
+    "title": "Arrays: Prefix Sum"
+  },
+  {
+    "folder": "24-Arays---Carry-FORWARD",
+    "title": "Arrays: Carry Forward"
+  },
+  {
+    "folder": "25-Array-Subarray",
+    "title": "Arrays: Subarrays"
+  },
+  {
+    "folder": "26-Array---Matrices",
+    "title": "Arrays: Matrices"
+  },
+  {
+    "folder": "27-Interview-Questions",
+    "title": "Interview Questions"
+  },
+  {
+    "folder": "28-bit-manipulation-1",
+    "title": "Bit Manipulation 1"
+  },
+  {
+    "folder": "29-bit-manipulations-2",
+    "title": "Bit Manipulation 2"
+  },
+  {
+    "folder": "30-Modular-arithmetic",
+    "title": "Modular Arithmetic"
+  },
+  {
+    "folder": "31-Arrays-and-maths",
+    "title": "Arrays and Maths"
+  },
+  {
+    "folder": "32-SORTING",
+    "title": "Sorting"
+  },
+  {
+    "folder": "33-Sorting-continued",
+    "title": "Sorting (Continued)"
+  },
+  {
+    "folder": "34-Strings",
+    "title": "Strings"
+  },
+  {
+    "folder": "35-Hashing-1",
+    "title": "Hashing 1"
+  },
+  {
+    "folder": "36-Hashing-2",
+    "title": "Hashing 2"
+  },
+  {
+    "folder": "36-1-Problem-solving",
+    "title": "Problem Solving"
+  },
+  {
+    "folder": "36-2-DSML-Intermediate-DSA_-Problem-Solving---1",
+    "title": "Intermediate DSA: Problem Solving 1"
+  },
+  {
+    "folder": "37-Recursion-1",
+    "title": "Recursion 1"
+  },
+  {
+    "folder": "37-1-recursion-1-follow-up-",
+    "title": "Recursion 1: Follow-up"
+  },
+  {
+    "folder": "38-Recusrion-2",
+    "title": "Recursion 2"
+  },
+  {
+    "folder": "39-Subset-and-subsequence-",
+    "title": "Subsets and Subsequences"
+  },
+  {
+    "folder": "40-Linked-List-basics",
+    "title": "Linked List Basics"
+  },
+  {
+    "folder": "41-Stack-and-Queues",
+    "title": "Stacks and Queues"
+  },
+  {
+    "folder": "42-DSML-Intermediate-_-Trees-Basics---1",
+    "title": "Trees Basics 1"
+  },
+  {
+    "folder": "42-1-DSML-Intermediate-_-Trees-Basics---2",
+    "title": "Trees Basics 2"
+  },
+  {
+    "folder": "43-Python-Refresher-1",
+    "title": "Python Refresher 1"
+  },
+  {
+    "folder": "44-Python-refresher-2",
+    "title": "Python Refresher 2"
+  },
+  {
+    "folder": "45-Python-refresher-3",
+    "title": "Python Refresher 3"
+  },
+  {
+    "folder": "46-Python-OOPS",
+    "title": "Python OOPs 1"
+  },
+  {
+    "folder": "47-Python-OOPS",
+    "title": "Python OOPs 2"
+  },
+  {
+    "folder": "48-Exception-Handling",
+    "title": "Exception Handling"
+  }
+]

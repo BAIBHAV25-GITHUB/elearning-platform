@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './common/NotificationBell';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -19,6 +20,19 @@ export default function Navbar() {
         <Link to="/" className="hover:text-indigo-300 transition">Courses</Link>
         {user ? (
           <>
+            {(user.role === 'instructor' || user.role === 'admin') && (
+              <>
+                <Link to="/instructor/courses" className="hover:text-indigo-300 transition">My Courses</Link>
+                <Link to="/instructor/analytics" className="hover:text-indigo-300 transition">Analytics</Link>
+              </>
+            )}
+            {user.role === 'student' && (
+              <>
+                <Link to="/my-learning" className="hover:text-indigo-300 transition">My Learning</Link>
+                <Link to="/student/certificates" className="hover:text-indigo-300 transition">Certificates</Link>
+              </>
+            )}
+            <NotificationBell />
             <span className="text-sm bg-slate-800 px-3 py-1 rounded-full text-slate-300">
               {user.name} ({user.role})
             </span>

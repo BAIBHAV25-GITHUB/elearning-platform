@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { loginApi } from '../services/auth.service.js';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
@@ -14,15 +13,8 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      const data = await loginApi({ email, password });
-      login(data.user, data.token);
-      
-      // Role-based redirect as required by Day 5 Roadmap
-      if (data.user.role === 'instructor' || data.user.role === 'admin') {
-        navigate('/instructor/dashboard');
-      } else {
-        navigate('/student/dashboard');
-      }
+      const user = await login(email, password);
+      navigate(user.role === 'instructor' || user.role === 'admin' ? '/instructor/courses' : '/');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
     }

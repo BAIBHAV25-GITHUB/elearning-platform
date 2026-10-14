@@ -1,13 +1,15 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { env } from './env.js';
 
 const { Pool } = pg;
 
+// Return DATE columns (batch start/end dates) as 'YYYY-MM-DD' strings instead of JS Dates,
+// which avoids off-by-one-day shifts across timezones.
+pg.types.setTypeParser(1082, (value) => value);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: env.databaseUrl,
+  ssl: env.isProduction ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('connect', () => {

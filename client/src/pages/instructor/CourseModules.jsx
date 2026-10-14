@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getCourseModulesApi, createModuleApi } from '../../services/module.service';
 import api from '../../api/axios';
+import CourseTools from '../../components/instructor/CourseTools';
 
 export default function CourseModules() {
   const { courseId } = useParams();
   const [modules, setModules] = useState([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [sequenceNo, setSequenceNo] = useState(1);
+  const [sequenceNo, setSequenceNo] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -16,7 +17,7 @@ export default function CourseModules() {
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [contentTitle, setContentTitle] = useState('');
   const [contentType, setContentType] = useState('video');
-  const [contentSeq, setContentSeq] = useState(1);
+  const [contentSeq, setContentSeq] = useState('');
   const [file, setFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -26,9 +27,6 @@ export default function CourseModules() {
     try {
       const data = await getCourseModulesApi(courseId);
       setModules(data.modules || []);
-      if (data.modules?.length > 0) {
-        setSequenceNo(data.modules.length + 1);
-      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to fetch modules');
     } finally {
@@ -37,7 +35,10 @@ export default function CourseModules() {
   };
 
   useEffect(() => {
-    fetchModules();
+    // fetch on mount / course change (state is set after the await, not synchronously)
+    const t = setTimeout(fetchModules, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId]);
 
   const handleAddModule = async (e) => {
@@ -45,9 +46,10 @@ export default function CourseModules() {
     setError('');
 
     try {
-      await createModuleApi(courseId, { title, description, sequenceNo: Number(sequenceNo) });
+      await createModuleApi(courseId, { title, description, ...(sequenceNo ? { sequenceNo: Number(sequenceNo) } : {}) });
       setTitle('');
       setDescription('');
+      setSequenceNo('');
       await fetchModules();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create module');
@@ -55,12 +57,12 @@ export default function CourseModules() {
   };
 
   // Toggle Content Upload Form for a Module
-  const toggleContentForm = (moduleId, existingContentsLength = 0) => {
+  const toggleContentForm = (moduleId) => {
     if (activeModuleId === moduleId) {
       setActiveModuleId(null);
     } else {
       setActiveModuleId(moduleId);
-      setContentSeq(existingContentsLength + 1);
+      setContentSeq('');
       setContentTitle('');
       setFile(null);
       setContentError('');
@@ -83,11 +85,11 @@ export default function CourseModules() {
     const formData = new FormData();
     formData.append('title', contentTitle);
     formData.append('type', contentType);
-    formData.append('sequenceNo', Number(contentSeq));
+    if (contentSeq) formData.append('sequenceNo', Number(contentSeq));
     formData.append('file', file);
 
     try {
-      await api.post(`/v1/modules/${moduleId}/content`, formData, {
+      await api.post(`/courses/${courseId}/modules/${moduleId}/content`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -126,6 +128,8 @@ export default function CourseModules() {
 
       {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm">{error}</div>}
 
+      <CourseTools courseId={courseId} />
+
       {/* Module Creation Form */}
       <form onSubmit={handleAddModule} className="bg-white p-6 rounded-lg border shadow-sm mb-8 space-y-4">
         <h2 className="text-lg font-semibold border-b pb-2 text-slate-800">Add New Module</h2>
@@ -146,7 +150,7 @@ export default function CourseModules() {
             <input
               type="number"
               min="1"
-              required
+              placeholder="Auto"
               className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               value={sequenceNo}
               onChange={(e) => setSequenceNo(e.target.value)}
@@ -189,7 +193,7 @@ export default function CourseModules() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => toggleContentForm(m.module_id, m.contents?.length || 0)}
+                  onClick={() => toggleContentForm(m.module_id)}
                   className="text-xs font-semibold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded transition"
                 >
                   {activeModuleId === m.module_id ? 'Cancel' : '+ Add Video / Media'}
@@ -222,7 +226,7 @@ export default function CourseModules() {
                       <input
                         type="number"
                         min="1"
-                        required
+                        placeholder="Auto"
                         className="w-full border rounded px-3 py-1.5 text-sm bg-white"
                         value={contentSeq}
                         onChange={(e) => setContentSeq(e.target.value)}
@@ -239,7 +243,7 @@ export default function CourseModules() {
                         onChange={(e) => setContentType(e.target.value)}
                       >
                         <option value="video">Video (MP4, MKV, WEBM)</option>
-                        <option value="document">Document (PDF)</option>
+                        <option value="pdf">Document (PDF)</option>
                       </select>
                     </div>
                     <div>

@@ -17,7 +17,10 @@ export default function ModuleComments({ moduleId }) {
   };
 
   useEffect(() => {
-    if (moduleId) fetchComments();
+    if (!moduleId) return undefined;
+    const t = setTimeout(fetchComments, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moduleId]);
 
   const handlePostTopComment = async (e) => {

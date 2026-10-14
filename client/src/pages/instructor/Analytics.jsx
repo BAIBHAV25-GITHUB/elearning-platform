@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
+import { formatMoney } from '../../utils/format';
 
 export default function Analytics() {
   const [data, setData] = useState({ batchCapacity: [], studentProgress: [], courseRevenue: [] });
@@ -46,9 +47,9 @@ export default function Analytics() {
             <tbody className="divide-y divide-slate-100 text-sm">
               {data.courseRevenue.map((row, idx) => (
                 <tr key={row.course_id || idx} className="hover:bg-slate-50">
-                  <td className="py-3 px-4 font-medium text-slate-800">{row.title || row.course_title}</td>
-                  <td className="py-3 px-4 text-slate-600">{row.total_enrollments || row.enrollment_count || 0}</td>
-                  <td className="py-3 px-4 font-bold text-emerald-600">₹{Number(row.total_revenue || 0).toLocaleString()}</td>
+                  <td className="py-3 px-4 font-medium text-slate-800">{row.course_title}</td>
+                  <td className="py-3 px-4 text-slate-600">{row.total_enrollments || 0}</td>
+                  <td className="py-3 px-4 font-bold text-emerald-600">{formatMoney(row.total_revenue)}</td>
                 </tr>
               ))}
             </tbody>
@@ -65,9 +66,9 @@ export default function Analytics() {
             return (
               <div key={batch.batch_id || idx} className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
                 <div className="flex justify-between items-center text-sm font-bold text-slate-800">
-                  <span>{batch.batch_name || `Batch #${batch.batch_id}`}</span>
+                  <span>{batch.batch_name || `Batch #${batch.batch_id}`} <span className="font-normal text-slate-500">· {batch.course_title}</span></span>
                   <span className={`text-xs px-2 py-0.5 rounded font-semibold ${batch.is_full ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {batch.is_full ? 'FULL' : 'OPEN'}
+                    {batch.is_full ? 'FULL' : (batch.batch_status || 'open').toUpperCase()}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500">Seats: {batch.current_capacity || 0} / {batch.max_capacity}</div>
@@ -96,9 +97,9 @@ export default function Analytics() {
             <tbody className="divide-y divide-slate-100 text-sm">
               {data.studentProgress.map((prog, idx) => (
                 <tr key={idx} className="hover:bg-slate-50">
-                  <td className="py-3 px-4 font-medium text-slate-800">{prog.user_name || prog.student_name}</td>
-                  <td className="py-3 px-4 text-slate-600">{prog.course_title || prog.title}</td>
-                  <td className="py-3 px-4 text-slate-600">{prog.completed_count || 0} / {prog.total_contents || 0}</td>
+                  <td className="py-3 px-4 font-medium text-slate-800">{prog.student_name}</td>
+                  <td className="py-3 px-4 text-slate-600">{prog.course_title}</td>
+                  <td className="py-3 px-4 text-slate-600">{prog.completed_contents || 0} / {prog.total_contents || 0}</td>
                   <td className="py-3 px-4 font-semibold text-indigo-600">{Math.round(prog.completion_percentage || 0)}%</td>
                 </tr>
               ))}

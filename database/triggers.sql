@@ -1,6 +1,5 @@
--- PostgreSQL Triggers T-01 through T-05 for E-Learning Platform
-
-\c elearning_db;
+-- PostgreSQL Triggers for E-Learning Platform
+-- Run after functions.sql:  psql -U postgres -d elearning_db -v ON_ERROR_STOP=1 -f triggers.sql
 
 -- Standard set_updated_at triggers
 CREATE TRIGGER trg_users_updated_at
@@ -17,7 +16,7 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_max_cap SMALLINT;
     v_cur_cap SMALLINT;
-    v_status batch_status_enum;
+    v_status  batch_status_enum;
 BEGIN
     SELECT max_capacity, current_capacity, status
       INTO v_max_cap, v_cur_cap, v_status
@@ -57,13 +56,17 @@ CREATE TRIGGER trg_T02_enrollment_after_insert
     FOR EACH ROW EXECUTE FUNCTION trg_enrollment_increment_capacity();
 
 -- T-03: Decrement Capacity on Hard Delete (AFTER DELETE ON enrollments)
+-- Only frees a seat if the row still held one (i.e. it was not already dropped,
+-- because fn_drop_enrollment / fn_expire_pending_enrollments release it).
 CREATE OR REPLACE FUNCTION trg_enrollment_decrement_capacity()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE batches
-       SET current_capacity = GREATEST(current_capacity - 1, 0),
-           status = CASE WHEN status = 'full' THEN 'open'::batch_status_enum ELSE status END
-     WHERE batch_id = OLD.batch_id;
+    IF OLD.status <> 'dropped' THEN
+        UPDATE batches
+           SET current_capacity = GREATEST(current_capacity - 1, 0),
+               status = CASE WHEN status = 'full' THEN 'open'::batch_status_enum ELSE status END
+         WHERE batch_id = OLD.batch_id;
+    END IF;
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -72,21 +75,25 @@ CREATE TRIGGER trg_T03_enrollment_after_delete
     AFTER DELETE ON enrollments
     FOR EACH ROW EXECUTE FUNCTION trg_enrollment_decrement_capacity();
 
--- T-04: Auto-Generate Certificates (Fires on BOTH AFTER INSERT and AFTER UPDATE of progress)
+-- T-04: Auto-Generate Certificates (AFTER INSERT and AFTER UPDATE of progress)
+-- Fix vs. first draft: completed items are now counted only if the content is
+-- itself 'ready', so total and completed are measured on the same set.
 CREATE OR REPLACE FUNCTION trg_progress_check_completion()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_course_id INTEGER;
-    v_student_id INTEGER;
-    v_total_content INTEGER;
+    v_course_id         INTEGER;
+    v_student_id        INTEGER;
+    v_enr_status        enrollment_status_enum;
+    v_total_content     INTEGER;
     v_completed_content INTEGER;
-    v_cert_exists BOOLEAN;
 BEGIN
-    -- Find course and student from enrollment
-    SELECT course_id, student_id INTO v_course_id, v_student_id
+    SELECT course_id, student_id, status INTO v_course_id, v_student_id, v_enr_status
       FROM enrollments WHERE enrollment_id = NEW.enrollment_id;
 
-    -- Count total ready content in course
+    IF v_enr_status <> 'active' THEN
+        RETURN NEW;                  -- completed already, or not entitled
+    END IF;
+
     SELECT COUNT(c.content_id) INTO v_total_content
       FROM content c
       JOIN content_modules m ON c.module_id = m.module_id
@@ -96,27 +103,26 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Count completed content for this enrollment
     SELECT COUNT(p.progress_id) INTO v_completed_content
       FROM progress p
       JOIN content c ON p.content_id = c.content_id
       JOIN content_modules m ON c.module_id = m.module_id
-     WHERE p.enrollment_id = NEW.enrollment_id 
-       AND m.course_id = v_course_id 
+     WHERE p.enrollment_id = NEW.enrollment_id
+       AND m.course_id = v_course_id
+       AND c.status = 'ready'
        AND p.completed = TRUE;
 
-    -- Check if 100% completed
     IF v_completed_content >= v_total_content THEN
-        SELECT EXISTS(SELECT 1 FROM certificates WHERE enrollment_id = NEW.enrollment_id) INTO v_cert_exists;
-        
-        IF NOT v_cert_exists THEN
-            INSERT INTO certificates (enrollment_id, user_id, certificate_url)
-            VALUES (
-                NEW.enrollment_id,
-                v_student_id,
-                'https://elearning.org/certificates/CERT-' || NEW.enrollment_id || '-' || EXTRACT(EPOCH FROM now())::BIGINT
-            );
+        -- enrollment_id is UNIQUE on certificates, so this is also race-safe
+        INSERT INTO certificates (enrollment_id, user_id, certificate_url)
+        VALUES (
+            NEW.enrollment_id,
+            v_student_id,
+            'https://elearning.org/certificates/CERT-' || NEW.enrollment_id || '-' || EXTRACT(EPOCH FROM now())::BIGINT
+        )
+        ON CONFLICT (enrollment_id) DO NOTHING;
 
+        IF FOUND THEN
             UPDATE enrollments SET status = 'completed' WHERE enrollment_id = NEW.enrollment_id;
 
             INSERT INTO notifications (user_id, title, message, type)
@@ -143,7 +149,8 @@ CREATE TRIGGER trg_T04_progress_after_update
     FOR EACH ROW WHEN (NEW.completed = TRUE AND OLD.completed = FALSE)
     EXECUTE FUNCTION trg_progress_check_completion();
 
--- T-05: Payment Guard - Ensures enrollment exists and is in pending/active status BEFORE INSERT ON payments
+-- T-05: Payment Guard - enrollment must exist and be pending/active
+-- (BEFORE INSERT ON payments)
 CREATE OR REPLACE FUNCTION trg_payment_enrollment_guard()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -166,3 +173,32 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_T05_payment_before_insert
     BEFORE INSERT ON payments
     FOR EACH ROW EXECUTE FUNCTION trg_payment_enrollment_guard();
+
+-- T-06: Comment replies must stay inside the same module (and stay 1 level deep)
+CREATE OR REPLACE FUNCTION trg_comment_parent_guard()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_parent_module INTEGER;
+    v_parent_parent INTEGER;
+BEGIN
+    IF NEW.parent_comment_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT module_id, parent_comment_id INTO v_parent_module, v_parent_parent
+      FROM comments WHERE comment_id = NEW.parent_comment_id;
+
+    IF v_parent_module IS DISTINCT FROM NEW.module_id THEN
+        RAISE EXCEPTION 'Reply must belong to the same module as its parent' USING ERRCODE = 'P0001';
+    END IF;
+    IF v_parent_parent IS NOT NULL THEN
+        RAISE EXCEPTION 'Nested replies are restricted to a maximum depth of 1 level' USING ERRCODE = 'P0001';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_T06_comment_before_insert
+    BEFORE INSERT ON comments
+    FOR EACH ROW EXECUTE FUNCTION trg_comment_parent_guard();

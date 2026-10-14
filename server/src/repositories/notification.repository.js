@@ -2,7 +2,7 @@ import { query } from '../config/db.js';
 
 export const getNotificationsByUserId = async (userId) => {
   const sql = `
-    SELECT notification_id, user_id, message, is_read, created_at
+    SELECT notification_id, user_id, title, message, type, is_read, created_at
     FROM notifications
     WHERE user_id = $1
     ORDER BY is_read ASC, created_at DESC
