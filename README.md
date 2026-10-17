@@ -82,6 +82,13 @@ npm install
 npm run dev                   # http://localhost:5173
 ```
 
+### Setup full DB Command with psql shell
+
+```bash
+DROP DATABASE IF EXISTS elearning_db WITH (FORCE);
+\i 'B:/example-path/E-learning/database/elearning_full_setup.sql'
+```
+
 ### Seed logins
 
 All use the password `Password123!`.
@@ -201,7 +208,3 @@ database/          schema, functions, triggers, views, seeds, migrations, genera
 docker-compose.yml db + server + client
 .github/workflows/ci.yml
 ```
-
-setup Data Command psql shell
-DROP DATABASE IF EXISTS elearning_db WITH (FORCE);
-postgres=# \i 'B:/Wrk/E-learning/database/elearning_full_setup.sql'
