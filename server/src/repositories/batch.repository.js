@@ -33,3 +33,22 @@ export const closeEndedBatchesInDb = async () => {
   const { rows } = await query(`SELECT fn_close_ended_batches() AS closed`);
   return rows[0].closed;
 };
+
+/** Batch of a course, or null. Used to make sure :batchId really belongs to :courseId. */
+export const findBatchInCourse = async (batchId, courseId) => {
+  const { rows } = await query(
+    `SELECT ${BATCH_COLUMNS} FROM batches WHERE batch_id = $1 AND course_id = $2`,
+    [batchId, courseId]
+  );
+  return rows[0] || null;
+};
+
+/** Edit / close / reopen through fn_update_batch (patch keys: batch_name, start_date, end_date, max_capacity, status). */
+export const updateBatchInDb = async (batchId, userId, patch) => {
+  const { rows } = await query(`SELECT * FROM fn_update_batch($1, $2, $3::jsonb)`, [
+    batchId,
+    userId,
+    JSON.stringify(patch),
+  ]);
+  return rows[0] || null;
+};

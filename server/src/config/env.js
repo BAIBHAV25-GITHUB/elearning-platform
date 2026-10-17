@@ -40,6 +40,12 @@ export const env = {
   // set TRUST_PROXY=1 when running behind one reverse proxy (nginx, Render, ...)
   trustProxy: e.TRUST_PROXY ? (Number.isNaN(Number(e.TRUST_PROXY)) ? e.TRUST_PROXY : Number(e.TRUST_PROXY)) : false,
   authRateLimit: Number(e.AUTH_RATE_LIMIT) || 20,
+  // general per-IP limit for every other /api route (requests per minute)
+  apiRateLimit: Number(e.API_RATE_LIMIT) || 600,
+  // Database TLS. Production defaults to a VERIFIED connection; set DB_SSL_REJECT_UNAUTHORIZED=false only for a
+  // provider with a self-signed certificate, or DB_SSL=false when the database is on a private network without TLS.
+  dbSsl: e.DB_SSL ? e.DB_SSL !== 'false' : e.NODE_ENV === 'production',
+  dbSslRejectUnauthorized: e.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
   razorpayKeyId: e.RAZORPAY_KEY_ID,
   razorpayKeySecret: e.RAZORPAY_KEY_SECRET,
   razorpayWebhookSecret: e.RAZORPAY_WEBHOOK_SECRET,
@@ -51,4 +57,8 @@ export const env = {
   videoMaxHeight: Number(e.VIDEO_MAX_HEIGHT) || 480,
   videoCrf: Number(e.VIDEO_CRF) || 30,
   videoMaxPartMb: Number(e.VIDEO_MAX_PART_MB) || 95,
+  // Protected media: Cloudinary 'authenticated' files are served through signed URLs. Set the token key
+  // (Cloudinary Enterprise / token-based authentication) to make those URLs expire after this many seconds.
+  cloudinaryAuthTokenKey: e.CLOUDINARY_AUTH_TOKEN_KEY || '',
+  mediaUrlTtlSeconds: Number(e.MEDIA_URL_TTL_SECONDS) || 3600,
 };

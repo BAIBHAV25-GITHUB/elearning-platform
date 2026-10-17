@@ -10,17 +10,17 @@ import {
   createPaymentRecordInDb,
   getPaymentByOrderIdFromDb,
   confirmPaymentInDb,
+  flagPaymentForRefund,
 } from '../repositories/payment.repository.js';
-import { handleError, toId } from '../utils/errors.js';
+import { handleError } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
+import { insertAuditLog } from '../repositories/audit.repository.js';
 
 export const createOrder = async (req, res) => {
   try {
-    const enrollmentId = toId(req.body?.enrollmentId);
-    if (!enrollmentId) {
-      return res.status(400).json({ message: 'A valid enrollmentId is required' });
-    }
+    const { enrollmentId } = req.body; // validated by createOrderSchema
     if (!isPaymentConfigured()) {
-      return res.status(503).json({ message: 'Payments are not configured on this server' });
+      return res.status(503).json({ success: false, message: 'Payments are not configured on this server' });
     }
 
     // Ownership + "must be pending" + the price all come from the DB (X4):
@@ -29,7 +29,7 @@ export const createOrder = async (req, res) => {
 
     const amountInPaise = Math.round(Number(enrollment.amount) * 100);
     if (!(amountInPaise > 0)) {
-      return res.status(400).json({ message: 'This course is free, no payment is required' });
+      return res.status(400).json({ success: false, message: 'This course is free, no payment is required' });
     }
 
     const order = await razorpay.orders.create({
@@ -60,6 +60,18 @@ export const createOrder = async (req, res) => {
   }
 };
 
+// Payments are money: every confirmation leaves a row in the audit log (who / which payment / how it was confirmed).
+const auditPaymentConfirmed = (req, paymentId, via, gatewayPaymentId) =>
+  insertAuditLog({
+    userId: req.user?.id ?? null, // the webhook has no user
+    action: 'PATCH_PAYMENTS',
+    tableName: 'payments',
+    entityId: paymentId,
+    oldValues: { status: 'pending' },
+    newValues: { status: 'success', via, gatewayPaymentId },
+    ipAddress: req.ip,
+  }).catch((err) => logger.error('Audit logging failed', { err: err.message }));
+
 /**
  * Razorpay webhook. Mounted in app.js BEFORE express.json() with express.raw(),
  * so req.body is the exact Buffer Razorpay signed (S0d).
@@ -69,20 +81,20 @@ export const handleWebhook = async (req, res) => {
     const webhookSecret = env.razorpayWebhookSecret;
     if (!webhookSecret) {
       // never accept unsigned webhooks (X3)
-      console.error('Razorpay webhook received but RAZORPAY_WEBHOOK_SECRET is not set - rejecting');
-      return res.status(503).json({ message: 'Webhook not configured' });
+      logger.error('Razorpay webhook received but RAZORPAY_WEBHOOK_SECRET is not set - rejecting');
+      return res.status(503).json({ success: false, message: 'Webhook not configured' });
     }
 
     const signature = req.headers['x-razorpay-signature'];
     if (!Buffer.isBuffer(req.body) || !verifyWebhookSignature(req.body, signature, webhookSecret)) {
-      return res.status(400).json({ message: 'Invalid webhook signature' });
+      return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
     }
 
     let event;
     try {
       event = JSON.parse(req.body.toString('utf8'));
     } catch {
-      return res.status(400).json({ message: 'Malformed webhook body' });
+      return res.status(400).json({ success: false, message: 'Malformed webhook body' });
     }
 
     if (event.event === 'payment.captured' || event.event === 'order.paid') {
@@ -92,11 +104,14 @@ export const handleWebhook = async (req, res) => {
         if (dbPayment && dbPayment.status !== 'success') {
           try {
             await confirmPaymentInDb(dbPayment.payment_id, paymentEntity.id, 'razorpay', paymentEntity.method);
+            await auditPaymentConfirmed(req, dbPayment.payment_id, 'webhook', paymentEntity.id);
           } catch (err) {
             if (err.code === 'P0001') {
               // money was captured but the enrollment was dropped / expired: needs a manual refund.
               // Answer 200 so Razorpay stops retrying an event that can never succeed.
-              console.error(`MANUAL REFUND NEEDED: payment ${paymentEntity.id} for order ${paymentEntity.order_id}: ${err.message}`);
+              // The payment is flagged so it shows up in the admin Payments page ("Needs refund").
+              logger.error(`REFUND NEEDED: payment ${paymentEntity.id} for order ${paymentEntity.order_id}: ${err.message}`);
+              await flagPaymentForRefund(dbPayment.payment_id, paymentEntity.id);
             } else {
               throw err;
             }
@@ -107,26 +122,23 @@ export const handleWebhook = async (req, res) => {
 
     return res.status(200).json({ status: 'ok' });
   } catch (error) {
-    console.error('Error processing Razorpay webhook:', error);
-    return res.status(500).json({ message: 'Webhook handler failed' });
+    logger.error('Error processing Razorpay webhook:', error);
+    return res.status(500).json({ success: false, message: 'Webhook handler failed' });
   }
 };
 
 export const verifyPayment = async (req, res) => {
   try {
-    const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body ?? {};
-    if ([razorpayOrderId, razorpayPaymentId, razorpaySignature].some((v) => typeof v !== 'string' || !v)) {
-      return res.status(400).json({ message: 'razorpayOrderId, razorpayPaymentId and razorpaySignature are required' });
-    }
+    const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body; // validated by verifyPaymentSchema
 
     if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature })) {
-      return res.status(400).json({ message: 'Invalid payment signature verification' });
+      return res.status(400).json({ success: false, message: 'Invalid payment signature verification' });
     }
 
     const dbPayment = await getPaymentByOrderIdFromDb(razorpayOrderId);
     // 404 (not 403) when the payment belongs to someone else, so order ids can't be probed (X5)
     if (!dbPayment || dbPayment.student_id !== req.user.id) {
-      return res.status(404).json({ message: 'Associated payment record not found' });
+      return res.status(404).json({ success: false, message: 'Associated payment record not found' });
     }
 
     if (dbPayment.status !== 'success') {
@@ -138,6 +150,7 @@ export const verifyPayment = async (req, res) => {
         /* keep the default */
       }
       await confirmPaymentInDb(dbPayment.payment_id, razorpayPaymentId, 'razorpay', method);
+      await auditPaymentConfirmed(req, dbPayment.payment_id, 'verify', razorpayPaymentId);
     }
 
     return res.status(200).json({

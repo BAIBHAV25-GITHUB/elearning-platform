@@ -1,39 +1,19 @@
-import { createBatchInDb, getBatchesByCourseFromDb } from '../repositories/batch.repository.js';
+import { createBatchInDb, getBatchesByCourseFromDb, findBatchInCourse, updateBatchInDb } from '../repositories/batch.repository.js';
 import { findCourseAccessInfo, canManageCourse } from '../repositories/course.repository.js';
 import { handleError, toId } from '../utils/errors.js';
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const createBatch = async (req, res) => {
   try {
     const courseId = req.courseId; // set by requireCourseOwner
-    const { batchName, startDate, endDate, maxCapacity } = req.body ?? {};
-
-    if (typeof batchName !== 'string' || !batchName.trim() || batchName.length > 100) {
-      return res.status(400).json({ message: 'batchName is required (max 100 characters)' });
-    }
-    if (!DATE_RE.test(String(startDate)) || !DATE_RE.test(String(endDate))) {
-      return res.status(400).json({ message: 'startDate and endDate must be YYYY-MM-DD' });
-    }
-    if (maxCapacity === undefined) {
-      return res.status(400).json({ message: 'All batch parameters are required' });
-    }
-
-    const parsedCapacity = Number(maxCapacity);
-    if (!Number.isInteger(parsedCapacity) || parsedCapacity < 1 || parsedCapacity > 30) {
-      return res.status(400).json({ message: 'maxCapacity must be an integer BETWEEN 1 AND 30' });
-    }
-
-    if (startDate >= endDate) {
-      return res.status(400).json({ message: 'startDate must be earlier than endDate' });
-    }
+    // validated + trimmed by createBatchSchema (src/validation/catalog.schemas.js)
+    const { batchName, startDate, endDate, maxCapacity } = req.body;
 
     const batch = await createBatchInDb({
       courseId,
-      batchName: batchName.trim(),
+      batchName,
       startDate,
       endDate,
-      maxCapacity: parsedCapacity,
+      maxCapacity,
     });
 
     return res.status(201).json({
@@ -53,16 +33,45 @@ export const createBatch = async (req, res) => {
 export const getBatchesByCourse = async (req, res) => {
   try {
     const courseId = toId(req.params.courseId);
-    if (!courseId) return res.status(400).json({ message: 'Invalid course id' });
+    if (!courseId) return res.status(400).json({ success: false, message: 'Invalid course id' });
 
     const info = await findCourseAccessInfo(courseId);
     const isManager = info ? await canManageCourse(courseId, req.user?.id) : false;
     if (!info || (info.status !== 'published' && !isManager)) {
-      return res.status(404).json({ message: 'Course not found' });
+      return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
     const batches = await getBatchesByCourseFromDb(courseId, { onlyOpen: !isManager });
     return res.status(200).json({ success: true, batches });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+/**
+ * Edit / close / reopen a batch (owner / admin). Send only what changes:
+ *   { batchName, startDate, endDate, maxCapacity, status: 'open' | 'closed' }
+ * Rules (seats already taken, ended batches, ...) live in fn_update_batch.
+ */
+export const updateBatch = async (req, res) => {
+  try {
+    const batchId = toId(req.params.batchId);
+    if (!batchId) return res.status(400).json({ success: false, message: 'Invalid batch id' });
+    if (!(await findBatchInCourse(batchId, req.courseId))) {
+      return res.status(404).json({ success: false, message: 'Batch not found in this course' });
+    }
+
+    // validated by updateBatchSchema: only the keys that were sent are present
+    const { batchName, startDate, endDate, maxCapacity, status } = req.body;
+    const patch = {};
+    if (batchName !== undefined) patch.batch_name = batchName;
+    if (startDate !== undefined) patch.start_date = startDate;
+    if (endDate !== undefined) patch.end_date = endDate;
+    if (maxCapacity !== undefined) patch.max_capacity = maxCapacity;
+    if (status !== undefined) patch.status = status;
+
+    const batch = await updateBatchInDb(batchId, req.user.id, patch);
+    return res.status(200).json({ success: true, batch });
   } catch (error) {
     return handleError(res, error);
   }

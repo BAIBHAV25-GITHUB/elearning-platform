@@ -2,16 +2,21 @@ import express from 'express';
 import { authenticateJWT, optionalAuth } from '../middleware/auth.middleware.js';
 import { authorizeRoles } from '../middleware/role.middleware.js';
 import { requireCourseOwner } from '../middleware/courseAccess.middleware.js';
-import { createModule, getCourseModules } from '../controllers/module.controller.js';
+import { createModule, getCourseModules, updateModule, reorderModules, deleteModule } from '../controllers/module.controller.js';
 import { addContentToModule, deleteContentFromModule } from '../controllers/content.controller.js';
 import { uploadSingleFile } from '../middleware/upload.middleware.js';
+import { validate } from '../middleware/validate.middleware.js';
+import { createModuleSchema, updateModuleSchema, reorderModulesSchema } from '../validation/catalog.schemas.js';
 
 const router = express.Router({ mergeParams: true });
 
 const owner = [authenticateJWT, authorizeRoles('instructor', 'admin'), requireCourseOwner()];
 
 router.get('/', optionalAuth, getCourseModules);
-router.post('/', ...owner, createModule);
+router.post('/', ...owner, validate(createModuleSchema), createModule);
+router.put('/order', ...owner, validate(reorderModulesSchema), reorderModules);
+router.patch('/:moduleId', ...owner, validate(updateModuleSchema), updateModule);
+router.delete('/:moduleId', ...owner, deleteModule);
 // ownership is checked BEFORE the upload middleware so a rejected user never uploads a file
 router.post('/:moduleId/content', ...owner, uploadSingleFile, addContentToModule);
 router.delete('/:moduleId/content/:contentId', ...owner, deleteContentFromModule);

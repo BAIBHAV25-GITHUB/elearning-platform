@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import api from '../api/axios';
+import { LoadingState, ErrorState } from '../components/common/States';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice, formatDate } from '../utils/format';
+import { useToast } from '../components/common/Toast';
 
 export default function CourseDetails() {
+  const toast = useToast();
   const { courseId: id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+  // set by the course player when it sends someone back (not enrolled / payment pending)
+  const notice = location.state?.notice;
   const [course, setCourse] = useState(null);
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
@@ -15,6 +21,10 @@ export default function CourseDetails() {
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loadError, setLoadError] = useState('');
+  // One role per account: only student accounts enrol (instructors / admins manage courses instead)
+  const cannotLearn = Boolean(user) && user.role !== 'student';
+  const [myEnrollments, setMyEnrollments] = useState([]);
 
   useEffect(() => {
     const fetchCourseAndBatches = async () => {
@@ -28,11 +38,12 @@ export default function CourseDetails() {
         setCourse(courseData);
         setBatches(batchesRes.data.batches || []);
 
-        // preview the first lesson only if the server returned its URL (enrolled / owner)
-        const first = courseData.modules?.flatMap((m) => m.contents || []).find((c) => c.video_url);
+        // preview the first VIDEO lesson only if the server returned its URL (enrolled / owner).
+        // PDFs keep their file URL in the same field, so the type has to be checked.
+        const first = courseData.modules?.flatMap((m) => m.contents || []).find((c) => c.type === 'video' && c.video_url);
         if (first) setActiveLesson(first);
       } catch (err) {
-        console.error('Failed to load course details:', err);
+        setLoadError(err.response?.status === 404 ? '' : err.response?.data?.message || 'Could not load this course. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -40,6 +51,15 @@ export default function CourseDetails() {
 
     fetchCourseAndBatches();
   }, [id]);
+
+  // students: find out whether they already have access, so the box can say "Go to course"
+  useEffect(() => {
+    if (user?.role !== 'student') return;
+    api
+      .get('/enrollments/me')
+      .then((res) => setMyEnrollments(res.data.enrollments || []))
+      .catch(() => setMyEnrollments([]));
+  }, [user?.role, user?.id]);
 
   const loadRazorpayScript = () => {
     return new Promise((resolve) => {
@@ -101,14 +121,14 @@ export default function CourseDetails() {
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature,
             });
-            alert('Enrollment and Payment Successful!');
+            toast.success('Enrollment and payment successful. Happy learning!');
             navigate(`/learn/${id}`);
           } catch (err) {
             setErrorMsg(err.response?.data?.message || 'Payment verification failed.');
           }
         },
         prefill: {
-          name: user?.name || user?.userName,
+          name: user?.name,
           email: user?.email,
         },
       };
@@ -122,8 +142,18 @@ export default function CourseDetails() {
     }
   };
 
-  if (loading) return <div className="text-center py-20">Loading course details...</div>;
+  if (loading) return <LoadingState label="Loading course details..." />;
+  if (loadError) return <ErrorState message={loadError} onRetry={() => window.location.reload()} />;
   if (!course) return <div className="text-center py-20">Course not found.</div>;
+
+  // Which call-to-action to show: guest / owner or admin / enrolled student / student who can enrol
+  const isGuest = !user;
+  const canManage = Boolean(user) && (user.role === 'admin' || (user.role === 'instructor' && course.instructor_id === user.id));
+  const hasAccess =
+    user?.role === 'student' &&
+    myEnrollments.some(
+      (e) => String(e.course_id) === String(id) && ['active', 'completed'].includes(e.enrollment_status)
+    );
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">
@@ -148,65 +178,104 @@ export default function CourseDetails() {
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-100 h-fit space-y-6">
           <div className="text-3xl font-bold text-indigo-600">{formatPrice(course.price)}</div>
 
+          {notice && (
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg">
+              {notice}
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg">
               {errorMsg}
             </div>
           )}
 
+          {hasAccess ? (
+            <Link
+              to={`/learn/${id}`}
+              className="block text-center w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg transition"
+            >
+              Go to course
+            </Link>
+          ) : canManage ? (
+            <Link
+              to={`/instructor/courses/${id}/modules`}
+              className="block text-center w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-3 rounded-lg transition"
+            >
+              Manage course
+            </Link>
+          ) : isGuest ? (
+            <Link
+              to={`/login?next=${encodeURIComponent(`/courses/${id}`)}`}
+              className="block text-center w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition"
+            >
+              Log in to enroll
+            </Link>
+          ) : (
+            <>
           <div>
-            <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
-              Select Batch
-            </h3>
-            {batches.length === 0 ? (
-              <p className="text-xs text-slate-500 italic">No active batches available.</p>
-            ) : (
-              <div className="space-y-2">
-                {batches.map((batch) => {
-                  const isFull = batch.current_capacity >= batch.max_capacity;
-                  return (
-                    <label
-                      key={batch.batch_id}
-                      className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer text-sm transition ${
-                        selectedBatchId === String(batch.batch_id)
-                          ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
-                          : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                      } ${isFull ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="batch"
-                          value={batch.batch_id}
-                          disabled={isFull}
-                          checked={selectedBatchId === String(batch.batch_id)}
-                          onChange={(e) => setSelectedBatchId(e.target.value)}
-                          className="accent-indigo-600"
-                        />
-                        <div>
-                          <div className="font-semibold">{batch.batch_name}</div>
-                          <div className="text-xs text-slate-500">
-                            {formatDate(batch.start_date)} – {formatDate(batch.end_date)}
+              <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">
+                Select Batch
+              </h3>
+              {batches.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">No active batches available.</p>
+              ) : (
+                <div className="space-y-2">
+                  {batches.map((batch) => {
+                    const isFull = batch.current_capacity >= batch.max_capacity;
+                    return (
+                      <label
+                        key={batch.batch_id}
+                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer text-sm transition ${
+                          selectedBatchId === String(batch.batch_id)
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
+                            : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                        } ${isFull ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="batch"
+                            value={batch.batch_id}
+                            disabled={isFull}
+                            checked={selectedBatchId === String(batch.batch_id)}
+                            onChange={(e) => setSelectedBatchId(e.target.value)}
+                            className="accent-indigo-600"
+                          />
+                          <div>
+                            <div className="font-semibold">{batch.batch_name}</div>
+                            <div className="text-xs text-slate-500">
+                              {formatDate(batch.start_date)} – {formatDate(batch.end_date)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${isFull ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {batch.current_capacity}/{batch.max_capacity} Seats
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${isFull ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {batch.current_capacity}/{batch.max_capacity} Seats{isFull ? ' · Full' : ''}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+  
+            {cannotLearn && (
+              <p className="p-3 bg-slate-50 border border-slate-200 text-slate-600 text-sm rounded-lg">
+                You are signed in as {user.role === 'admin' ? 'an admin' : 'an instructor'}, and only student accounts can enrol in courses. Use a separate student account to learn.
+              </p>
             )}
-          </div>
+  
+            <button
+              onClick={handleEnroll}
+              disabled={enrolling || batches.length === 0 || cannotLearn}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
+            >
+              {enrolling ? 'Processing...' : Number(course.price) === 0 ? 'Enroll for free' : 'Enroll & Pay'}
+            </button>
+  
 
-          <button
-            onClick={handleEnroll}
-            disabled={enrolling || batches.length === 0}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
-          >
-            {enrolling ? 'Processing...' : Number(course.price) === 0 ? 'Enroll for free' : 'Enroll & Pay'}
-          </button>
+            </>
+          )}
 
           <div>
             <h3 className="text-lg font-bold text-slate-800 mb-3">Course Content</h3>
@@ -219,8 +288,8 @@ export default function CourseDetails() {
                       {(m.contents?.length === 1 && m.contents[0].title === m.title ? [] : m.contents || []).map((c) => (
                         <li
                           key={c.content_id}
-                          onClick={() => c.video_url && setActiveLesson(c)}
-                          className={`text-xs px-2 py-1 rounded ${c.video_url ? 'cursor-pointer hover:bg-slate-100' : ''} ${
+                          onClick={() => c.type === 'video' && c.video_url && setActiveLesson(c)}
+                          className={`text-xs px-2 py-1 rounded ${c.type === 'video' && c.video_url ? 'cursor-pointer hover:bg-slate-100' : ''} ${
                             activeLesson?.content_id === c.content_id ? 'text-indigo-600 font-semibold' : 'text-slate-600'
                           }`}
                         >

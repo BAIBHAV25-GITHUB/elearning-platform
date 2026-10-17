@@ -6,6 +6,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { env } from '../config/env.js';
 import cloudinary, { deleteFromCloudinary } from '../integrations/cloudinary.js';
 import { completeVideoContent, markContentError } from '../repositories/content.repository.js';
+import { logger } from '../utils/logger.js';
 
 /*
  * One uploaded video  ->  compressed + cut into ~10-minute pieces  ->  each piece uploaded to Cloudinary.
@@ -71,7 +72,7 @@ const uploadPart = (file, publicId) =>
   new Promise((resolve, reject) => {
     cloudinary.uploader.upload_large(
       file,
-      { resource_type: 'video', public_id: publicId, overwrite: true, chunk_size: 6_000_000 },
+      { resource_type: 'video', type: 'authenticated', public_id: publicId, overwrite: true, chunk_size: 6_000_000 },
       (err, res) => {
         if (err) return reject(new Error(`Cloudinary upload failed: ${err.message || err}`));
         if (!res?.secure_url || !res?.public_id) {
@@ -90,7 +91,7 @@ export const processVideo = async (contentId, sourcePath) => {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), `video-${contentId}-`));
   const uploadedIds = [];
   const t0 = Date.now();
-  const log = (msg) => console.log(`[video ${contentId}] ${msg}`);
+  const log = (msg) => logger.info(`[video ${contentId}] ${msg}`);
   try {
     const { size: srcSize } = await fs.stat(sourcePath);
     log(`received ${(srcSize / 1048576).toFixed(0)} MB, compressing...`);
@@ -116,14 +117,14 @@ export const processVideo = async (contentId, sourcePath) => {
     await completeVideoContent(contentId, parts);
     log(`ready: ${parts.length} part(s), ${parts.reduce((t, p) => t + p.durationSec, 0)}s of video, took ${Math.round((Date.now() - t0) / 1000)}s`);
   } catch (err) {
-    console.error(`[video ${contentId}] failed:`, err.message);
+    logger.error(`[video ${contentId}] failed:`, err.message);
     // don't leave orphaned pieces in Cloudinary
     await Promise.allSettled(uploadedIds.map((id) => deleteFromCloudinary(id, 'video')));
     // the instructor sees this text: keep it readable and free of server paths
     const shown = /Invalid data found/.test(err.message)
       ? 'This file could not be read as a video. Try exporting it again as MP4.'
       : err.message.replace(/(?:[A-Za-z]:)?[\\/][^\s|]+/g, '<file>');
-    await markContentError(contentId, shown).catch((e) => console.error('Could not record error:', e.message));
+    await markContentError(contentId, shown).catch((e) => logger.error('Could not record error:', e.message));
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
     await fs.unlink(sourcePath).catch(() => {});

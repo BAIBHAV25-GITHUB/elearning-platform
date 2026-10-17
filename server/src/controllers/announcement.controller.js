@@ -7,7 +7,7 @@ export const createAnnouncement = async (req, res) => {
     const { title, content } = req.body ?? {};
 
     if (typeof title !== 'string' || !title.trim() || title.length > 200 || typeof content !== 'string' || !content.trim()) {
-      return res.status(400).json({ message: 'Title (max 200 characters) and content are required.' });
+      return res.status(400).json({ success: false, message: 'Title (max 200 characters) and content are required.' });
     }
 
     // posts the announcement and notifies enrolled students in one DB call

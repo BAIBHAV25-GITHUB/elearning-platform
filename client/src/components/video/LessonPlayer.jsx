@@ -26,6 +26,8 @@ export default function LessonPlayer({
   onProgressUpdate,
   onEnded,
   autoPlay = false,
+  captionsUrl, // optional WebVTT file for the whole video (a part can carry its own captions_url)
+  captionsLang = "en",
 }) {
   const durOf = (p) => Number(p.duration_sec) || 0;
   const offsets = [];
@@ -197,7 +199,11 @@ export default function LessonPlayer({
           className="absolute inset-0 w-full h-full"
           style={{ visibility: p === idx ? "visible" : "hidden" }}
           {...handlers(p)}
-        />
+        >
+          {(parts[p].captions_url || captionsUrl) && (
+            <track kind="captions" src={parts[p].captions_url || captionsUrl} srcLang={captionsLang} label="Captions" />
+          )}
+        </video>
       ))}
 
       {waiting && playing && (

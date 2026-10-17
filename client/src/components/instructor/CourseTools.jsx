@@ -2,7 +2,7 @@ import { useState } from 'react';
 import api from '../../api/axios';
 
 // Batch creation + announcements for one course (F21). Both endpoints are owner-only on the server.
-export default function CourseTools({ courseId }) {
+export default function CourseTools({ courseId, onBatchCreated }) {
   const [batch, setBatch] = useState({ batchName: '', startDate: '', endDate: '', maxCapacity: 30 });
   const [ann, setAnn] = useState({ title: '', content: '' });
   const [msg, setMsg] = useState({ type: '', text: '' });
@@ -34,7 +34,10 @@ export default function CourseTools({ courseId }) {
           run(
             () => api.post(`/courses/${courseId}/batches`, { ...batch, maxCapacity: Number(batch.maxCapacity) }),
             'Batch created.',
-            () => setBatch({ batchName: '', startDate: '', endDate: '', maxCapacity: 30 })
+            () => {
+              setBatch({ batchName: '', startDate: '', endDate: '', maxCapacity: 30 });
+              onBatchCreated?.();
+            }
           );
         }}
       >

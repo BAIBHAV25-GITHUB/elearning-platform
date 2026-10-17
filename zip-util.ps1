@@ -1,25 +1,33 @@
 # ============================================================
 # Repo ZIP Backup Script
 # ============================================================
-# Creates separate ZIP files for each part of the e-learning
-# platform repo: client, server and database.
+# Creates ONE ZIP of the whole e-learning platform repo,
+# keeping the original folder structure:
 #
-# Place this script in the repo root (next to client/, server/,
-# database/) and run it from PowerShell:
+#   .github/  client/  database/  server/
+#   .dockerignore  .env.example  .gitignore  docker-compose.yml
+#   IMPROVEMENTS.md  package-lock.json  package.json
+#   README.md  zip-util.ps1
+#
+# Place this script in the repo root and run it from PowerShell:
 #   .\zip-util.ps1
+#
+# Output: zips\elearning-repo.zip
 #
 # Excludes:
 #   - node_modules
 #   - dist / build output
 #   - .env files (real secrets) -- .env.example is KEPT
-#   - existing ZIP / 7z files
-#   - .git folders
+#   - the zips output folder itself, and any ZIP / 7z files
+#   - .git folder (.github is KEPT)
 #
 # Requires 7-Zip
 # ============================================================
 
 $Root = $PSScriptRoot
-$OutputDir = Join-Path $PSScriptRoot "zips"
+$OutputDir = Join-Path $Root "zips"
+$ZipName = "elearning-repo.zip"
+$ZipPath = Join-Path $OutputDir $ZipName
 
 # ------------------------------------------------------------
 # Find 7-Zip
@@ -47,78 +55,66 @@ Write-Host ""
 Write-Host "Using 7-Zip: $SevenZip" -ForegroundColor Cyan
 
 # ------------------------------------------------------------
-# Create output directory
+# Prepare output directory (only replaces the previous repo zip)
 # ------------------------------------------------------------
 
-if (Test-Path $OutputDir) {
-    Remove-Item $OutputDir -Recurse -Force
+if (-not (Test-Path $OutputDir)) {
+    New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-New-Item -ItemType Directory -Path $OutputDir | Out-Null
+if (Test-Path $ZipPath) {
+    Remove-Item $ZipPath -Force
+}
 
 # ------------------------------------------------------------
-# Parts to ZIP
+# Create the ZIP
 # ------------------------------------------------------------
 
-$Parts = @("client", "server", "database")
+Write-Host ""
+Write-Host "Creating: $ZipName" -ForegroundColor Green
 
-# ------------------------------------------------------------
-# Create ZIPs
-# ------------------------------------------------------------
+# 7-Zip exclusions
+# - "-xr!name" matches that exact file/folder name at any depth
+# - "-x!zips" excludes only the root-level zips folder (so the
+#   output never gets zipped into itself)
+# - Real .env files are excluded, .env.example is kept on purpose
+# - ".git" is an exact match, so ".github" and ".gitignore" are kept
+$Arguments = @(
+    "a"
+    "-tzip"
+    "`"$ZipPath`""
+    "."
+    "-x!zips"
+    "-xr!node_modules"
+    "-xr!dist"
+    "-xr!build"
+    "-xr!.git"
+    "-xr!.env"
+    "-xr!.env.local"
+    "-xr!.env.*.local"
+    "-xr!.env.development"
+    "-xr!.env.production"
+    "-xr!.env.test"
+    "-xr!*.zip"
+    "-xr!*.7z"
+)
 
-foreach ($Part in $Parts) {
+# Run 7-Zip from the repo root so the zip has no extra top-level path
+Push-Location $Root
 
-    $SourceFolder = Join-Path $Root $Part
-    $ZipName = "elearning-$Part.zip"
-    $ZipPath = Join-Path $OutputDir $ZipName
+try {
+    & $SevenZip $Arguments
 
-    if (-not (Test-Path $SourceFolder)) {
-        Write-Host ""
-        Write-Host "WARNING: Folder not found:" -ForegroundColor Yellow
-        Write-Host "  $SourceFolder"
-        continue
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  SUCCESS: $ZipPath" -ForegroundColor Green
     }
-
-    Write-Host ""
-    Write-Host "Creating: $ZipName" -ForegroundColor Green
-
-    # 7-Zip exclusions
-    # Real .env files are excluded, but .env.example is kept on purpose.
-    $Arguments = @(
-        "a"
-        "-tzip"
-        "`"$ZipPath`""
-        "."
-        "-xr!node_modules"
-        "-xr!dist"
-        "-xr!build"
-        "-xr!.git"
-        "-xr!.env"
-        "-xr!.env.local"
-        "-xr!.env.*.local"
-        "-xr!.env.development"
-        "-xr!.env.production"
-        "-xr!.env.test"
-        "-xr!*.zip"
-        "-xr!*.7z"
-    )
-
-    # Run 7-Zip from inside the folder so the zip has no extra top-level path
-    Push-Location $SourceFolder
-
-    try {
-        & $SevenZip $Arguments
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  SUCCESS: $ZipPath" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  ERROR: Failed to create $ZipName" -ForegroundColor Red
-        }
+    else {
+        Write-Host "  ERROR: Failed to create $ZipName" -ForegroundColor Red
+        exit 1
     }
-    finally {
-        Pop-Location
-    }
+}
+finally {
+    Pop-Location
 }
 
 # ------------------------------------------------------------
@@ -127,9 +123,9 @@ foreach ($Part in $Parts) {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "client, server and database ZIPs have been created." -ForegroundColor Green
+Write-Host "Full repo ZIP has been created." -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Output folder:"
-Write-Host "  $OutputDir"
+Write-Host "Output file:"
+Write-Host "  $ZipPath"
 Write-Host ""

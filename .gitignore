@@ -1,22 +1,7 @@
-# Dependencies
-node_modules/
-server/node_modules/
-client/node_modules/
-
-# Production builds
-dist/
-build/
-
-# Environment files
+node_modules
+dist
 .env
-.env.local
-server/.env
-client/.env
-
-# System & IDE files
-.DS_Store
-.vscode/
 *.log
-
+server/manifest.json
 # Zips
 zips/

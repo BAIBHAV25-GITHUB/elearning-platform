@@ -1,13 +1,28 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
+import { useAuth } from "../../context/AuthContext";
 import VideoPlayer from "../../components/video/VideoPlayer";
 import LessonPlayer from "../../components/video/LessonPlayer";
+import ReadingLesson from "../../components/lesson/ReadingLesson";
 import ModuleComments from "../../components/discussion/ModuleComments";
+
+// enrollment statuses that give access to the course content
+const ENTITLED = ["active", "completed"];
+
+// small label for lessons that are not videos, so students know what they are opening
+const TYPE_LABEL = { pdf: "PDF", text: "Text" };
+const TypeBadge = ({ type }) =>
+  TYPE_LABEL[type] ? (
+    <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">
+      {TYPE_LABEL[type]}
+    </span>
+  ) : null;
 
 export default function CoursePlayer() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [course, setCourse] = useState(null);
   const [enrollment, setEnrollment] = useState(null);
@@ -16,6 +31,7 @@ export default function CoursePlayer() {
   const [positions, setPositions] = useState({});
   const [autoPlayNext, setAutoPlayNext] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     const fetchPlayerData = async () => {
@@ -26,14 +42,37 @@ export default function CoursePlayer() {
         ]);
 
         const courseData = courseRes.data.course || courseRes.data;
-        setCourse(courseData);
 
-        const currentEnrollment = enrollmentsRes.data.enrollments?.find(
+        // A student can hold old dropped enrollments next to a current one: use the one that
+        // gives access, else a pending one (to explain what is missing), else any.
+        const mine = (enrollmentsRes.data.enrollments || []).filter(
           (e) => String(e.course_id) === String(courseId),
         );
-        setEnrollment(currentEnrollment);
+        const currentEnrollment =
+          mine.find((e) => ENTITLED.includes(e.enrollment_status)) ||
+          mine.find((e) => e.enrollment_status === "pending") ||
+          mine[0];
 
-        if (currentEnrollment) {
+        // Access guard: the course's instructor, admins and students with an active / completed
+        // enrollment may open the player. Everyone else goes back to the course page (the server
+        // hides the media for them anyway, so the player would only show a broken screen).
+        const canManage = user?.role === "admin" || courseData.instructor_id === user?.id;
+        const isEntitledStudent = currentEnrollment && ENTITLED.includes(currentEnrollment.enrollment_status);
+        if (!canManage && !isEntitledStudent) {
+          const notice =
+            currentEnrollment?.enrollment_status === "pending"
+              ? "Your enrollment is waiting for payment. Finish it to start learning."
+              : "Enroll in this course to start learning.";
+          setRedirecting(true);
+          navigate(`/courses/${courseId}`, { replace: true, state: { notice } });
+          return;
+        }
+
+        setCourse(courseData);
+        setEnrollment(isEntitledStudent ? currentEnrollment : null);
+        let progressRows = [];
+
+        if (isEntitledStudent) {
           const progressRes = await api.get(
             `/progress/${currentEnrollment.enrollment_id}`,
           );
@@ -42,19 +81,27 @@ export default function CoursePlayer() {
               ?.filter((p) => p.completed)
               .map((p) => p.content_id),
           );
+          progressRows = progressRes.data.progress || [];
           setCompletedContentIds(completedSet);
           setPositions(
             Object.fromEntries((progressRes.data.progress || []).map((p) => [p.content_id, p.watch_duration || 0])),
           );
         }
 
-        // Set default initial video content
-        if (
-          courseData.modules?.length > 0 &&
-          courseData.modules[0].contents?.length > 0
-        ) {
-          setActiveContent(courseData.modules[0].contents[0]);
+        // Where to start: resume the lesson the student touched last and has not finished; otherwise the
+        // first unfinished lesson; otherwise (everything done / new course) the first lesson.
+        const lessons = (courseData.modules || []).flatMap((m) => m.contents || []);
+        let start = lessons[0] || null;
+        if (isEntitledStudent) {
+          const rows = (progressRows || []).filter((p) => !p.completed);
+          const recent = [...rows].sort((a, b) => new Date(b.last_accessed_at) - new Date(a.last_accessed_at))[0];
+          const doneIds = new Set((progressRows || []).filter((p) => p.completed).map((p) => p.content_id));
+          start =
+            (recent && lessons.find((l) => l.content_id === recent.content_id)) ||
+            lessons.find((l) => !doneIds.has(l.content_id)) ||
+            start;
         }
+        if (start) setActiveContent(start);
       } catch (err) {
         console.error("Failed to load course player:", err);
       } finally {
@@ -63,7 +110,9 @@ export default function CoursePlayer() {
     };
 
     fetchPlayerData();
-  }, [courseId]);
+    // user comes from AuthProvider, which only renders its children once the session is restored
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, user?.id, user?.role]);
 
   const handleProgressUpdate = (contentId, isCompleted, seconds) => {
     if (seconds !== undefined) setPositions((prev) => ({ ...prev, [contentId]: seconds }));
@@ -78,6 +127,15 @@ export default function CoursePlayer() {
         (m) => m.contents || [],
       )
     : [];
+
+  const readyTotal = allContents.length;
+  const doneCount = allContents.filter((c) => completedContentIds.has(c.content_id || c.id)).length;
+  const donePct = readyTotal ? Math.round((doneCount / readyTotal) * 100) : 0;
+  const nextLesson = (() => {
+    if (!activeContent) return null;
+    const i = allContents.findIndex((c) => (c.content_id || c.id) === (activeContent.content_id || activeContent.id));
+    return i !== -1 ? allContents[i + 1] || null : null;
+  })();
 
   const handleVideoEnded = () => {
     if (!activeContent) return;
@@ -98,7 +156,7 @@ export default function CoursePlayer() {
       )
     : null;
 
-  if (loading)
+  if (loading || redirecting)
     return (
       <div className="text-center py-20 text-slate-600">
         Loading learning environment...
@@ -109,56 +167,118 @@ export default function CoursePlayer() {
       <div className="text-center py-20 text-slate-600">Course not found.</div>
     );
 
+  // What to show for the selected lesson, by type.
+  const renderLesson = () => {
+    const c = activeContent;
+    const cId = c.content_id || c.id;
+
+    // PDF and text lessons: viewer + "Mark as complete"
+    if (c.type === "pdf" || c.type === "text") {
+      return (
+        <ReadingLesson
+          key={`reading-${cId}`}
+          content={c}
+          enrollmentId={enrollment?.enrollment_id}
+          completed={completedContentIds.has(cId)}
+          onProgressUpdate={handleProgressUpdate}
+        />
+      );
+    }
+
+    // Video that is still processing / failed (an owner sees these), or has no playable file
+    const hasParts = c.parts?.length > 0;
+    if ((c.status && c.status !== "ready") || (!hasParts && !(c.video_url || c.url))) {
+      return (
+        <div className="p-10 text-center bg-slate-800 rounded-xl text-slate-400">
+          This video is not available yet.
+        </div>
+      );
+    }
+
+    const player = hasParts ? (
+      // A long video stored as pieces: plays as ONE video (one seek bar, one clock)
+      <LessonPlayer
+        key={`video-${cId}`}
+        parts={c.parts}
+        captionsUrl={c.captions_url}
+        enrollmentId={enrollment?.enrollment_id}
+        contentId={c.content_id}
+        onProgressUpdate={handleProgressUpdate}
+        onEnded={handleVideoEnded}
+        autoPlay={autoPlayNext}
+        startAt={completedContentIds.has(c.content_id) ? 0 : positions[c.content_id] || 0}
+      />
+    ) : (
+      <VideoPlayer
+        videoUrl={c.video_url || c.url}
+        captionsUrl={c.captions_url}
+        enrollmentId={enrollment?.enrollment_id}
+        contentId={cId}
+        onProgressUpdate={handleProgressUpdate}
+        onEnded={handleVideoEnded}
+        autoPlay={autoPlayNext}
+        startAt={positions[cId] || 0}
+      />
+    );
+
+    // Captions (c.captions_url, WebVTT) and a text transcript (c.transcript) show up as soon as the API provides them
+    return (
+      <>
+        {player}
+        {c.transcript && (
+          <details className="mt-3 rounded-lg bg-slate-800 p-3 text-sm text-slate-200">
+            <summary className="cursor-pointer font-semibold">Transcript</summary>
+            <p className="mt-2 whitespace-pre-line leading-relaxed">{c.transcript}</p>
+          </details>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       {/* Top Header */}
-      <header className="h-16 bg-slate-800 border-b border-slate-700 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <header className="min-h-16 bg-slate-800 border-b border-slate-700 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
           <button
             onClick={() => navigate(`/courses/${courseId}`)}
-            className="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition"
+            className="shrink-0 text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition"
           >
             ← Back
           </button>
-          <h1 className="text-lg font-semibold truncate">{course.title}</h1>
+          <h1 className="min-w-0 text-base sm:text-lg font-semibold truncate">{course.title}</h1>
         </div>
+        {enrollment && readyTotal > 0 && (
+          <div className="w-full md:w-56 order-last md:order-none">
+            <div
+              role="progressbar"
+              aria-label="Course progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={donePct}
+              aria-valuetext={`${doneCount} of ${readyTotal} lessons completed`}
+              className="h-2 bg-slate-700 rounded-full overflow-hidden"
+            >
+              <div className="h-full bg-emerald-500" style={{ width: `${donePct}%` }} />
+            </div>
+            <div className="text-xs text-slate-400 mt-1">{doneCount} of {readyTotal} lessons · {donePct}%</div>
+          </div>
+        )}
         <button
           onClick={() => navigate("/student/certificates")}
-          className="text-sm bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg font-medium transition"
+          className="shrink-0 text-sm bg-indigo-600 hover:bg-indigo-500 px-3 sm:px-4 py-2 rounded-lg font-medium transition"
         >
-          My Certificates
+          <span className="sm:hidden">Certificates</span><span className="hidden sm:inline">My Certificates</span>
         </button>
       </header>
 
       {/* Main Content & Sidebar */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden">
         {/* Main Video Viewport */}
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex-1 min-w-0 p-3 sm:p-6 lg:overflow-y-auto">
           {activeContent ? (
             <div className="max-w-5xl mx-auto space-y-6">
-              {activeContent.parts?.length > 0 ? (
-                // A long video stored as pieces: plays as ONE video (one seek bar, one clock)
-                <LessonPlayer
-                  key={`video-${activeContent.content_id}`}
-                  parts={activeContent.parts}
-                  enrollmentId={enrollment?.enrollment_id}
-                  contentId={activeContent.content_id}
-                  onProgressUpdate={handleProgressUpdate}
-                  onEnded={handleVideoEnded}
-                  autoPlay={autoPlayNext}
-                  startAt={completedContentIds.has(activeContent.content_id) ? 0 : positions[activeContent.content_id] || 0}
-                />
-              ) : (
-                <VideoPlayer
-                  videoUrl={activeContent.video_url || activeContent.url}
-                  enrollmentId={enrollment?.enrollment_id}
-                  contentId={activeContent.content_id || activeContent.id}
-                  onProgressUpdate={handleProgressUpdate}
-                  onEnded={handleVideoEnded}
-                  autoPlay={autoPlayNext}
-                  startAt={positions[activeContent.content_id || activeContent.id] || 0}
-                />
-              )}
+              {renderLesson()}
               <div>
                 <h2 className="text-2xl font-bold text-white">
                   {activeContent.title}
@@ -167,6 +287,17 @@ export default function CoursePlayer() {
                   {activeContent.description || "No description provided."}
                 </p>
               </div>
+              {nextLesson && (
+                <button
+                  onClick={() => {
+                    setAutoPlayNext(false);
+                    setActiveContent(nextLesson);
+                  }}
+                  className="text-sm bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg font-medium transition"
+                >
+                  Next lesson: {nextLesson.title} →
+                </button>
+              )}
               {activeModule && <ModuleComments key={activeModule.module_id} moduleId={activeModule.module_id} />}
             </div>
           ) : (
@@ -177,7 +308,7 @@ export default function CoursePlayer() {
         </div>
 
         {/* Course Modules Sidebar */}
-        <aside className="w-full lg:w-96 bg-slate-800 border-l border-slate-700 overflow-y-auto p-4">
+        <aside aria-label="Course content" className="w-full lg:w-96 bg-slate-800 border-t lg:border-t-0 lg:border-l border-slate-700 lg:overflow-y-auto p-4">
           <h3 className="text-base font-bold text-slate-200 uppercase tracking-wider mb-4">
             Course Content
           </h3>
@@ -193,6 +324,7 @@ export default function CoursePlayer() {
                 return (
                   <button
                     key={module.module_id || mIdx}
+                    aria-current={isSelected ? 'true' : undefined}
                     onClick={() => {
                       setAutoPlayNext(false);
                       setActiveContent(only);
@@ -203,6 +335,7 @@ export default function CoursePlayer() {
                   >
                     <span className="truncate pr-2">
                       {mIdx + 1}. {module.title}
+                      <TypeBadge type={only.type} />
                     </span>
                     {completedContentIds.has(only.content_id) ? (
                       <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800 text-xs">
@@ -221,8 +354,11 @@ export default function CoursePlayer() {
                 key={module.module_id || mIdx}
                 className="bg-slate-900/50 rounded-lg p-3"
               >
-                <div className="text-sm font-semibold text-indigo-400 mb-2">
-                  Module {mIdx + 1}: {module.title}
+                <div className="text-sm font-semibold text-indigo-400 mb-2 flex items-baseline justify-between gap-2">
+                  <span>Module {mIdx + 1}: {module.title}</span>
+                  <span className="text-xs font-normal text-slate-400 shrink-0">
+                    {(module.contents || []).filter((c) => completedContentIds.has(c.content_id || c.id)).length}/{(module.contents || []).length} done
+                  </span>
                 </div>
                 <div className="space-y-1">
                   {module.contents?.map((content, cIdx) => {
@@ -235,6 +371,7 @@ export default function CoursePlayer() {
                     return (
                       <button
                         key={cId || cIdx}
+                        aria-current={isSelected ? 'true' : undefined}
                         onClick={() => {
                           setAutoPlayNext(false);
                           setActiveContent(content);
@@ -247,6 +384,7 @@ export default function CoursePlayer() {
                       >
                         <span className="truncate pr-2">
                           {cIdx + 1}. {content.title}
+                          <TypeBadge type={content.type} />
                         </span>
                         {isCompleted && (
                           <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800">

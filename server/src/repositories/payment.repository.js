@@ -64,3 +64,33 @@ export const confirmPaymentInDb = async (paymentId, gatewayPaymentId, gateway = 
   await query(sql, [paymentId, gatewayPaymentId, gateway, dbMethod]);
   return true;
 };
+
+/** Admin payment list (fn_list_payments). Returns { payments, total }. */
+export const listPayments = async ({ search = null, status = null, needsRefund = null, limit = 20, offset = 0 }) => {
+  const { rows } = await query('SELECT * FROM fn_list_payments($1, $2::payment_status_enum, $3, $4, $5)', [
+    search,
+    status,
+    needsRefund,
+    limit,
+    offset,
+  ]);
+  const total = rows.length ? Number(rows[0].total_count) : 0;
+  return { payments: rows.map(({ total_count, ...p }) => p), total };
+};
+
+/** Webhook: money was captured but the enrollment is dead; remember it so an admin can refund it. */
+export const flagPaymentForRefund = async (paymentId, gatewayPaymentId) => {
+  await query('SELECT fn_flag_payment_for_refund($1, $2)', [paymentId, gatewayPaymentId]);
+};
+
+/** Validates a refund (admin, rules in SQL) and returns { payment_id, amount, transaction_id, ... }. */
+export const getRefundTarget = async (adminId, paymentId) => {
+  const { rows } = await query('SELECT * FROM fn_get_refund_target($1, $2)', [adminId, paymentId]);
+  return rows[0];
+};
+
+/** Records an accepted refund: payment refunded, enrollment dropped, student notified. */
+export const markPaymentRefunded = async (adminId, paymentId, refundId, reason) => {
+  const { rows } = await query('SELECT * FROM fn_mark_payment_refunded($1, $2, $3, $4)', [adminId, paymentId, refundId, reason]);
+  return rows[0];
+};

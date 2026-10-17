@@ -9,6 +9,8 @@ export default function VideoPlayer({
   onEnded,
   autoPlay = false,
   startAt = 0,
+  captionsUrl, // optional WebVTT file; shows a captions button when given
+  captionsLang = "en",
 }) {
   const videoRef = useRef(null);
   const { sendHeartbeat } = useProgressThrottler(
@@ -62,7 +64,9 @@ export default function VideoPlayer({
           handlePauseOrEnd(true);
           if (onEnded) onEnded();
         }}
-      />
+      >
+        {captionsUrl && <track kind="captions" src={captionsUrl} srcLang={captionsLang} label="Captions" />}
+      </video>
     </div>
   );
 }

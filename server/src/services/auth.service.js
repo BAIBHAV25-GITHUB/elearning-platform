@@ -10,12 +10,17 @@ const httpError = (message, statusCode) => {
 };
 
 // DB row (user_id, user_name, ...) -> shape the client reads (id, name, ...)
-const toPublicUser = (row) => ({
+const toPublicUser = (row, instructorStatus = null) => ({
   id: row.user_id,
   name: row.user_name,
   email: row.email,
   role: row.role,
+  // 'pending' | 'approved' | 'rejected' for instructors, null otherwise (admin approval, IMPROVEMENTS.md 3.2)
+  instructorStatus,
 });
+
+const withInstructorStatus = async (row) =>
+  toPublicUser(row, row.role === 'instructor' ? await userRepository.getInstructorStatus(row.user_id) : null);
 
 const signToken = (user) =>
   jwt.sign({ id: user.id, role: user.role }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
@@ -38,7 +43,7 @@ export const registerUser = async ({ name, email, password, role }) => {
     throw err;
   }
 
-  const user = toPublicUser(row);
+  const user = await withInstructorStatus(row);
   return { user, token: signToken(user) };
 };
 
@@ -56,7 +61,7 @@ export const loginUser = async ({ email, password }) => {
   if (row.status !== 'active') throw httpError('Account is not active', 403);
   if (!row.role) throw httpError('Account has no role assigned', 403);
 
-  const user = toPublicUser(row);
+  const user = await withInstructorStatus(row);
   return { user, token: signToken(user) };
 };
 
@@ -64,5 +69,5 @@ export const loginUser = async ({ email, password }) => {
 export const getCurrentUser = async (userId) => {
   const row = await userRepository.findUserById(userId);
   if (!row || row.status !== 'active') throw httpError('User not found', 404);
-  return toPublicUser(row);
+  return withInstructorStatus(row);
 };

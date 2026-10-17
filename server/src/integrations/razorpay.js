@@ -34,3 +34,11 @@ export const verifyPaymentSignature = ({ razorpayOrderId, razorpayPaymentId, raz
     .digest('hex');
   return safeEqualHex(expected, razorpaySignature);
 };
+
+/** Refunds a captured payment (amount in rupees) and returns Razorpay's refund entity. */
+export const refundGatewayPayment = (gatewayPaymentId, amountRupees, notes = {}) =>
+  razorpay.payments.refund(gatewayPaymentId, {
+    amount: Math.round(Number(amountRupees) * 100),
+    speed: 'normal',
+    notes,
+  });

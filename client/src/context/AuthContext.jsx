@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/axios';
+import { queryClient } from '../api/queryClient';
 
 const AuthContext = createContext();
 
@@ -26,20 +27,15 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
+    queryClient.clear(); // never show a previous account's cached data
     localStorage.setItem('token', res.data.token);
     setUser(res.data.user);
     return res.data.user; // Returned for role-based redirection
   };
 
   const register = async (name, email, password, role) => {
-    // Passes both 'name' and 'userName' to prevent mismatch with backend controller
-    const res = await api.post('/auth/register', { 
-      userName: name, 
-      name, 
-      email, 
-      password, 
-      role 
-    });
+    const res = await api.post('/auth/register', { name, email, password, role });
+    queryClient.clear();
     localStorage.setItem('token', res.data.token);
     setUser(res.data.user);
     return res.data.user; // Returned for role-based redirection
@@ -47,6 +43,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    queryClient.clear();
     setUser(null);
   };
 

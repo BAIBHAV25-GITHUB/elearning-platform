@@ -1,14 +1,14 @@
 import { query } from '../config/db.js';
+import { listRows } from '../utils/pagination.js';
 
-export const getNotificationsByUserId = async (userId) => {
+export const getNotificationsByUserId = async (userId, paging) => {
   const sql = `
     SELECT notification_id, user_id, title, message, type, is_read, created_at
     FROM notifications
     WHERE user_id = $1
-    ORDER BY is_read ASC, created_at DESC
+    ORDER BY is_read ASC, created_at DESC, notification_id DESC
   `;
-  const { rows } = await query(sql, [userId]);
-  return rows;
+  return listRows(sql, [userId], paging);
 };
 
 export const markNotificationReadInDb = async (notificationId, userId) => {

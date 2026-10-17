@@ -14,6 +14,8 @@ export const createContent = async ({
   durationSec,
   sequenceNo,
   status = "ready",
+  textBody = null,
+  delivery = "upload",
 }) => {
   const query = `
     INSERT INTO content (
@@ -24,13 +26,15 @@ export const createContent = async ({
       cloudinary_id,
       duration_sec,
       sequence_no,
-      status
+      status,
+      text_body,
+      delivery
     )
     VALUES ($1, $2, $3::content_type_enum, $4, $5, $6,
             COALESCE($7::smallint,
                      (SELECT COALESCE(MAX(sequence_no), 0) + 1
                         FROM content WHERE module_id = $1)),
-            $8::content_status_enum)
+            $8::content_status_enum, $9, $10)
     RETURNING *;
   `;
 
@@ -43,6 +47,8 @@ export const createContent = async ({
     durationSec || 0,
     sequenceNo ?? null,
     status,
+    textBody,
+    delivery,
   ];
 
   const { rows } = await db.query(query, values);
@@ -72,7 +78,7 @@ export const completeVideoContent = async (contentId, parts) => {
     const total = parts.reduce((t, p) => t + p.durationSec, 0);
     if (parts.length === 1) {
       await client.query(
-        `UPDATE content SET video_url = $2, cloudinary_id = $3, duration_sec = $4,
+        `UPDATE content SET video_url = $2, cloudinary_id = $3, duration_sec = $4, delivery = 'authenticated',
                             status = 'ready', error_message = NULL
           WHERE content_id = $1`,
         [contentId, parts[0].url, parts[0].publicId, total]
@@ -80,8 +86,8 @@ export const completeVideoContent = async (contentId, parts) => {
     } else {
       for (const [i, p] of parts.entries()) {
         await client.query(
-          `INSERT INTO content_parts (content_id, part_no, video_url, cloudinary_id, duration_sec)
-           VALUES ($1, $2, $3, $4, $5)`,
+          `INSERT INTO content_parts (content_id, part_no, video_url, cloudinary_id, duration_sec, delivery)
+           VALUES ($1, $2, $3, $4, $5, 'authenticated')`,
           [contentId, i + 1, p.url, p.publicId, p.durationSec]
         );
       }

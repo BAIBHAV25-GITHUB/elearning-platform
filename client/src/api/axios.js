@@ -22,6 +22,12 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       if (window.location.pathname !== '/login') window.location.assign('/login');
     }
+    // The account was deactivated / banned while the user was logged in (the server checks the account on
+    // every request): end the session and tell them why on the login page.
+    if (err.response?.status === 403 && err.response?.data?.code === 'ACCOUNT_DISABLED' && !isCredentialCall) {
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') window.location.assign('/login?reason=disabled');
+    }
     return Promise.reject(err);
   }
 );

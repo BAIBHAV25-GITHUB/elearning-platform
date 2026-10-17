@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import { useToast } from '../../components/common/Toast';
 
 export default function ModuleComments({ moduleId }) {
+  const toast = useToast();
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -31,7 +33,7 @@ export default function ModuleComments({ moduleId }) {
       setNewComment('');
       fetchComments();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to post comment');
+      toast.error(err.response?.data?.message || 'Failed to post comment');
     }
   };
 
@@ -46,7 +48,7 @@ export default function ModuleComments({ moduleId }) {
       setReplyingTo(null);
       fetchComments();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to post reply');
+      toast.error(err.response?.data?.message || 'Failed to post reply');
     }
   };
 

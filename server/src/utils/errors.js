@@ -1,3 +1,5 @@
+import { logger } from './logger.js';
+
 // Central place that turns any thrown error into a safe HTTP response (X14).
 // 4xx messages we control are returned; everything else becomes a generic 500
 // and the real error is only logged on the server.
@@ -57,6 +59,6 @@ export const toHttpError = (err) => {
 /** Use in controllers: catch (err) { return handleError(res, err); } */
 export const handleError = (res, err) => {
   const { status, message } = toHttpError(err);
-  if (status >= 500) console.error(err);
+  if (status >= 500) logger.error('Request failed', { err });
   return res.status(status).json({ success: false, message });
 };

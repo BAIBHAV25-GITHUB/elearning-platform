@@ -13,7 +13,7 @@ export const upsertProgressInDb = async (enrollmentId, contentId, watchDuration,
 };
 
 export const getContentDurationFromDb = async (contentId) => {
-  const sql = `SELECT content_id, duration_sec, module_id FROM content WHERE content_id = $1`;
+  const sql = `SELECT content_id, duration_sec, module_id, type, status FROM content WHERE content_id = $1`;
   const { rows } = await query(sql, [contentId]);
   return rows[0];
 };

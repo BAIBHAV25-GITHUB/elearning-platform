@@ -1,5 +1,5 @@
 -- PostgreSQL Schema for E-Learning Platform
--- 11 ENUM types, 18 tables, constraints and indexes.
+-- 10 ENUM types, 16 tables, constraints and indexes.
 --
 -- Run against an existing database (see 00_create_db.sql):
 --   psql -U postgres -d elearning_db -v ON_ERROR_STOP=1 -f schema.sql
@@ -24,7 +24,6 @@ CREATE TYPE enrollment_status_enum  AS ENUM ('pending', 'active', 'completed', '
 CREATE TYPE payment_method_enum     AS ENUM ('card', 'upi', 'netbanking', 'wallet', 'free');
 CREATE TYPE payment_status_enum     AS ENUM ('pending', 'success', 'failed', 'refunded');
 CREATE TYPE notification_type_enum  AS ENUM ('enrollment', 'payment', 'certificate', 'announcement', 'system');
-CREATE TYPE report_format_enum      AS ENUM ('pdf', 'csv', 'xlsx');
 CREATE TYPE audit_action_enum       AS ENUM ('INSERT', 'UPDATE', 'DELETE');
 
 -- 2. Core Identity Tables
@@ -39,11 +38,12 @@ CREATE TABLE users (
     user_name   VARCHAR(100) NOT NULL,
     email       VARCHAR(255) NOT NULL,
     password    VARCHAR(255) NOT NULL,          -- bcrypt hash, never plain text
-    phone       VARCHAR(20),
     status      user_status_enum NOT NULL DEFAULT 'active',
+    instructor_status VARCHAR(10),               -- NULL unless instructor: pending / approved / rejected
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT chk_users_email CHECK (email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$')
+    CONSTRAINT chk_users_email CHECK (email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$'),
+    CONSTRAINT chk_users_instructor_status CHECK (instructor_status IS NULL OR instructor_status IN ('pending', 'approved', 'rejected'))
 );
 -- Case-insensitive uniqueness (Alice@x.com and alice@x.com are the same account)
 CREATE UNIQUE INDEX uq_users_email_lower ON users (lower(email));
@@ -94,7 +94,7 @@ CREATE TABLE content_modules (
     description TEXT,
     sequence_no SMALLINT NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_module_seq UNIQUE (course_id, sequence_no),
+    CONSTRAINT uq_module_seq UNIQUE (course_id, sequence_no) DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT chk_module_seq CHECK (sequence_no > 0)
 );
 
@@ -109,9 +109,12 @@ CREATE TABLE content (
     sequence_no   SMALLINT NOT NULL,
     status        content_status_enum NOT NULL DEFAULT 'ready',
     error_message TEXT,                      -- why processing failed (status = 'error')
+    text_body     TEXT,                      -- lesson text, only for type = 'text'
     CONSTRAINT uq_content_seq UNIQUE (module_id, sequence_no),
     CONSTRAINT chk_content_seq CHECK (sequence_no > 0),
-    CONSTRAINT chk_content_dur CHECK (duration_sec IS NULL OR duration_sec >= 0)
+    CONSTRAINT chk_content_dur CHECK (duration_sec IS NULL OR duration_sec >= 0),
+    -- a text lesson must carry its text (video / pdf lessons carry a file instead)
+    CONSTRAINT chk_content_text_body CHECK (type <> 'text' OR (text_body IS NOT NULL AND length(btrim(text_body)) > 0))
 );
 
 -- A video is ONE content row. Because the free Cloudinary plan caps a video file at
@@ -166,6 +169,20 @@ CREATE TABLE payments (
 -- Several attempts per enrollment are allowed, but only one can succeed.
 CREATE UNIQUE INDEX uq_payments_one_success ON payments (enrollment_id) WHERE status = 'success';
 
+-- Refunds (P0-6) and protected media (P0-3)
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS refunded_at   TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS refund_id     VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS refund_reason TEXT,
+    ADD COLUMN IF NOT EXISTS needs_refund  BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+
+-- 'upload' = public Cloudinary URL (older files), 'authenticated' = only reachable with a signed URL
+ALTER TABLE content
+    ADD COLUMN IF NOT EXISTS delivery VARCHAR(13) NOT NULL DEFAULT 'upload' CHECK (delivery IN ('upload', 'authenticated'));
+ALTER TABLE content_parts
+    ADD COLUMN IF NOT EXISTS delivery VARCHAR(13) NOT NULL DEFAULT 'upload' CHECK (delivery IN ('upload', 'authenticated'));
+
 -- 5. Learning Progress & Certificates
 CREATE TABLE progress (
     progress_id      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -184,11 +201,17 @@ CREATE TABLE certificates (
     enrollment_id   INTEGER NOT NULL UNIQUE REFERENCES enrollments(enrollment_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     user_id         INTEGER NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     certificate_url VARCHAR(512) NOT NULL,
-    issue_date      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    email_sent      BOOLEAN NOT NULL DEFAULT FALSE
+    issue_date      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 6. Communication
+-- Certificates (step 6): a short public code that anyone can check on the verify page, instead of the
+-- made-up certificate_url. (certificate_url stays only because the completion trigger still fills it.)
+ALTER TABLE certificates
+    ADD COLUMN IF NOT EXISTS verification_code VARCHAR(16) NOT NULL
+        DEFAULT upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_certificates_code ON certificates (verification_code);
+
 CREATE TABLE notifications (
     notification_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -218,16 +241,7 @@ CREATE TABLE announcements (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 7. Reporting & Audit
-CREATE TABLE reports (
-    report_id    INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    report_type  VARCHAR(100) NOT NULL,
-    format       report_format_enum NOT NULL DEFAULT 'pdf',
-    generated_by INTEGER NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT ON UPDATE CASCADE,
-    file_url     VARCHAR(512),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
+-- 7. Audit
 -- The API audit middleware writes one row per request, so record_id may be
 -- NULL (e.g. a POST before the id is known) and old/new values and the client
 -- IP are stored directly on the row.
@@ -243,17 +257,9 @@ CREATE TABLE audit_logs (
     "timestamp" TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE audit_log_details (
-    detail_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    log_id      BIGINT NOT NULL REFERENCES audit_logs(log_id) ON DELETE CASCADE ON UPDATE CASCADE,
-    column_name VARCHAR(100) NOT NULL,
-    old_val     TEXT,
-    new_val     TEXT
-);
-
 -- 8. Indexes
 CREATE INDEX idx_user_roles_role     ON user_roles(role_id);
-CREATE INDEX idx_courses_instructor  ON courses(instructor_id);
+CREATE INDEX idx_courses_instructor_status ON courses(instructor_id, status);
 CREATE INDEX idx_courses_status      ON courses(status);
 CREATE INDEX idx_batches_course      ON batches(course_id);
 CREATE INDEX idx_modules_course      ON content_modules(course_id);
@@ -267,6 +273,7 @@ CREATE INDEX idx_payments_enrollment ON payments(enrollment_id);
 CREATE INDEX idx_progress_enrollment ON progress(enrollment_id);
 CREATE INDEX idx_progress_content    ON progress(content_id);
 CREATE INDEX idx_notif_user_read     ON notifications(user_id, is_read);
-CREATE INDEX idx_comments_module     ON comments(module_id);
+CREATE INDEX idx_notif_user_created  ON notifications(user_id, created_at DESC);
+CREATE INDEX idx_comments_module_created ON comments(module_id, created_at);
 CREATE INDEX idx_announcements_course ON announcements(course_id);
 CREATE INDEX idx_audit_ts            ON audit_logs("timestamp");

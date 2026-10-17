@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../api/axios';
+import { useDismiss } from '../../hooks/useDismiss';
 
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
+  const wrapper = useRef(null);
+  const button = useRef(null);
+  const close = () => setOpen(false);
+  // Esc closes (focus goes back to the bell), so does a click outside
+  useDismiss({ open, containerRef: wrapper, returnFocusRef: button, onClose: close });
 
   const fetchNotifications = async () => {
     try {
@@ -37,21 +43,26 @@ export default function NotificationBell() {
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapper}>
       <button
+        ref={button}
+        type="button"
         onClick={() => setOpen(!open)}
-        className="relative p-2 text-slate-300 hover:text-white transition"
+        aria-expanded={open}
+        aria-controls="notifications-panel"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        className="relative p-2 text-slate-300 hover:text-white transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded"
       >
-        🔔
+        <span aria-hidden="true">🔔</span>
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+          <span aria-hidden="true" className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
             {unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-2 z-50 text-slate-100">
+        <div id="notifications-panel" role="region" aria-label="Notifications" className="absolute right-0 mt-2 w-80 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-2 z-50 text-slate-100">
           <div className="px-4 py-2 font-bold text-xs uppercase tracking-wider text-slate-400 border-b border-slate-700 flex justify-between">
             <span>Notifications</span>
             <span>{unreadCount} Unread</span>
@@ -75,6 +86,8 @@ export default function NotificationBell() {
                   </div>
                   {!n.is_read && (
                     <button
+                      type="button"
+                      aria-label={`Mark as read: ${n.message}`}
                       onClick={() => handleMarkAsRead(n.notification_id)}
                       className="text-[10px] text-indigo-400 hover:underline shrink-0"
                     >

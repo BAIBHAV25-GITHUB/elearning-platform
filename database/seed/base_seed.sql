@@ -13,12 +13,12 @@ INSERT INTO roles (role_name, description) VALUES
 ('Student',    'Platform learner enrolled in courses');
 
 -- 2. Users
-INSERT INTO users (user_name, email, password, phone, status) VALUES
-('System Admin',       'admin@elearning.com',      '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', '+911111111111', 'active'),
-('Professor John Doe', 'john.doe@elearning.com',   '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', '+911222222222', 'active'),
-('Dr. Sarah Smith',    'sarah.smith@elearning.com','$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', '+911333333333', 'active'),
-('Alice Johnson',      'alice@student.com',        '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', '+911444444444', 'active'),
-('Bob Williams',       'bob@student.com',          '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', '+911555555555', 'active');
+INSERT INTO users (user_name, email, password, status) VALUES
+('System Admin',       'admin@elearning.com',      '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', 'active'),
+('Professor John Doe', 'john.doe@elearning.com',   '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', 'active'),
+('Dr. Sarah Smith',    'sarah.smith@elearning.com','$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', 'active'),
+('Alice Johnson',      'alice@student.com',        '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', 'active'),
+('Bob Williams',       'bob@student.com',          '$2b$10$wtctRnZnhSkAi0v6YKVk6.G5/mN34W8H8R/Q8iC1BwygCOhd9YDui', 'active');
 
 -- Assign roles by name, not by guessing ids
 INSERT INTO user_roles (user_id, role_id)
@@ -32,6 +32,9 @@ SELECT u.user_id, r.role_id
        ) AS m(email, role_name)
   JOIN users u ON u.email = m.email
   JOIN roles r ON r.role_name = m.role_name;
+
+-- Seeded instructors are already approved
+UPDATE users SET instructor_status = 'approved' WHERE email IN ('john.doe@elearning.com', 'sarah.smith@elearning.com');
 
 -- 3. Courses (prices in INR). "Intro to Git" is free (tests the no-payment flow),
 --    "System Design Primer" is a draft (must NOT appear in the public catalog).

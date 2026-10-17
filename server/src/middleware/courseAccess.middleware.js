@@ -10,13 +10,13 @@ import { toId, handleError } from '../utils/errors.js';
 export const requireCourseOwner = (paramName = 'courseId') => async (req, res, next) => {
   try {
     const courseId = toId(req.params[paramName]);
-    if (!courseId) return res.status(400).json({ message: 'Invalid course id' });
+    if (!courseId) return res.status(400).json({ success: false, message: 'Invalid course id' });
 
     const info = await findCourseAccessInfo(courseId);
-    if (!info) return res.status(404).json({ message: 'Course not found' });
+    if (!info) return res.status(404).json({ success: false, message: 'Course not found' });
 
     if (!(await canManageCourse(courseId, req.user.id))) {
-      return res.status(403).json({ message: 'Forbidden: you do not manage this course' });
+      return res.status(403).json({ success: false, message: 'Forbidden: you do not manage this course' });
     }
     req.courseId = courseId;
     next();

@@ -1,28 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
+import { qk } from '../../api/queryKeys';
+import { apiError } from '../../utils/apiError';
 import { formatDate } from '../../utils/format';
+import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
 
 export default function Certificates() {
-  const [certificates, setCertificates] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: certificates = [], isPending, error, refetch } = useQuery({
+    queryKey: qk.certificates,
+    queryFn: async () => (await api.get('/certificates/my-certificates')).data.certificates || [],
+  });
 
-  useEffect(() => {
-    const fetchCertificates = async () => {
-      try {
-        const res = await api.get('/certificates/my-certificates');
-        setCertificates(res.data.certificates || []);
-      } catch (err) {
-        console.error('Failed to load certificates:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCertificates();
-  }, []);
-
-  if (loading) return <div className="text-center py-20 text-slate-600">Loading certificates...</div>;
+  if (isPending) return <LoadingState label="Loading certificates..." />;
+  if (error) return <ErrorState message={apiError(error, 'Failed to load your certificates.')} onRetry={refetch} />;
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">
@@ -30,10 +21,7 @@ export default function Certificates() {
       <p className="text-slate-600 mb-8">View and download certificates awarded upon 100% course completion.</p>
 
       {certificates.length === 0 ? (
-        <div className="p-12 text-center bg-white border border-slate-200 rounded-xl shadow-sm">
-          <p className="text-slate-500 font-medium">No certificates earned yet.</p>
-          <p className="text-xs text-slate-400 mt-1">Complete all lessons in a course to automatically generate your certificate.</p>
-        </div>
+        <EmptyState title="No certificates earned yet." hint="Complete all lessons in a course to automatically generate your certificate." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {certificates.map((cert) => (
@@ -55,7 +43,7 @@ export default function Certificates() {
                   to={`/student/certificates/${cert.certificate_id}`}
                   className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition"
                 >
-                  View / Print Certificate
+                  View / Download Certificate
                 </Link>
               </div>
             </div>

@@ -1,47 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../api/axios';
+import { qk } from '../../api/queryKeys';
+import { apiError } from '../../utils/apiError';
 import { formatDate } from '../../utils/format';
-
-const STATUS_STYLE = {
-  active: 'bg-emerald-100 text-emerald-700',
-  completed: 'bg-indigo-100 text-indigo-700',
-  pending: 'bg-yellow-100 text-yellow-800',
-  dropped: 'bg-slate-100 text-slate-500',
-};
+import { useConfirm } from '../../components/common/Confirm';
+import StatusBadge from '../../components/common/StatusBadge';
 
 export default function MyLearning() {
-  const [enrollments, setEnrollments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState('');
 
-  const load = async () => {
-    try {
-      const res = await api.get('/enrollments/me');
-      setEnrollments(res.data.enrollments || []);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load your courses');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: enrollments = [], isPending, error: loadError } = useQuery({
+    queryKey: qk.enrollments,
+    queryFn: async () => (await api.get('/enrollments/me')).data.enrollments || [],
+  });
 
-  useEffect(() => {
-    load();
-  }, []);
+  const drop = useMutation({
+    mutationFn: (id) => api.post(`/enrollments/${id}/drop`, { reason: 'Dropped by student' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.enrollments }),
+    onError: (err) => setActionError(apiError(err, 'Could not drop enrollment')),
+  });
 
   const handleDrop = async (id) => {
-    if (!window.confirm('Drop this enrollment? Your seat will be released.')) return;
-    setError('');
-    try {
-      await api.post(`/enrollments/${id}/drop`, { reason: 'Dropped by student' });
-      await load();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Could not drop enrollment');
-    }
+    if (!(await confirm({ title: 'Drop enrollment', message: 'Drop this enrollment? Your seat will be released and you lose access to the course. If you already paid, dropping does NOT refund you automatically; contact support to request one.', confirmLabel: 'Drop enrollment', danger: true }))) return;
+    setActionError('');
+    drop.mutate(id);
   };
 
-  if (loading) return <div className="text-center py-20 text-slate-600">Loading your courses...</div>;
+  const error = actionError || (loadError ? apiError(loadError, 'Failed to load your courses') : '');
+
+  if (isPending) return <div className="text-center py-20 text-slate-600">Loading your courses...</div>;
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-10">
@@ -55,26 +46,37 @@ export default function MyLearning() {
         <div className="space-y-3">
           {enrollments.map((e) => (
             <div key={e.enrollment_id} className="bg-white border rounded-xl p-4 flex items-center justify-between gap-4">
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="font-semibold text-slate-800">{e.course_title}</div>
                 <div className="text-xs text-slate-500 mt-1">
                   {e.batch_name} · {formatDate(e.start_date)} – {formatDate(e.end_date)}
                 </div>
+                {['active', 'completed'].includes(e.enrollment_status) && e.total_lessons > 0 && (
+                  <div className="mt-2 max-w-sm">
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500"
+                        style={{ width: `${Math.round((e.completed_lessons / e.total_lessons) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      {e.completed_lessons} of {e.total_lessons} lessons · {Math.round((e.completed_lessons / e.total_lessons) * 100)}%
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-3">
-                <span className={`text-xs px-2 py-1 rounded font-semibold capitalize ${STATUS_STYLE[e.enrollment_status] || ''}`}>
-                  {e.enrollment_status}
-                </span>
+                <StatusBadge status={e.enrollment_status} />
                 {['active', 'completed'].includes(e.enrollment_status) && (
                   <Link to={`/learn/${e.course_id}`} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold">
-                    Continue
+                    {e.enrollment_status === 'completed' ? 'Review' : e.completed_lessons > 0 ? 'Resume' : 'Start'}
                   </Link>
                 )}
                 {e.enrollment_status === 'pending' && (
                   <Link to={`/courses/${e.course_id}`} className="text-sm text-indigo-600 font-semibold">Finish payment</Link>
                 )}
                 {['pending', 'active'].includes(e.enrollment_status) && (
-                  <button onClick={() => handleDrop(e.enrollment_id)} className="text-sm text-red-600 hover:underline">Drop</button>
+                  <button onClick={() => handleDrop(e.enrollment_id)} disabled={drop.isPending} className="text-sm text-red-600 hover:underline disabled:opacity-50">Drop</button>
                 )}
               </div>
             </div>
