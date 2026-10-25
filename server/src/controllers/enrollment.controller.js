@@ -1,59 +1,65 @@
-import { enrollStudentInDb, dropEnrollmentInDb, getStudentEnrollmentsFromDb } from '../repositories/enrollment.repository.js';
+import {
+  enrollStudentInDb,
+  dropEnrollmentInDb,
+  findEnrollmentById,
+  getStudentEnrollmentsFromDb,
+} from '../repositories/enrollment.repository.js';
+import { handleError, toId } from '../utils/errors.js';
+import { pagingFrom, listResponse } from '../utils/pagination.js';
 
 export const enrollStudent = async (req, res) => {
   try {
     const studentId = req.user.id;
-    const { courseId, batchId } = req.body;
+    const { courseId, batchId } = req.body; // validated by enrollSchema in enrollment.routes.js
 
-    if (!courseId || !batchId) {
-      return res.status(400).json({ message: 'courseId and batchId are required' });
-    }
-
+    // DB rules (published course, batch belongs to course, capacity, duplicates...)
+    // raise coded errors that handleError maps to 400 / 404 / 409 (F8).
     const enrollmentId = await enrollStudentInDb(studentId, courseId, batchId);
+    const enrollment = await findEnrollmentById(enrollmentId);
 
+    // Free courses come back 'active' already, so the client must skip the payment step (F5).
+    const status = enrollment?.enrollment_status;
     return res.status(201).json({
       success: true,
-      message: 'Student enrolled successfully',
-      enrollmentId
+      message: status === 'active' ? 'Enrolled successfully' : 'Enrollment created, payment required',
+      enrollmentId,
+      status,
+      requiresPayment: status === 'pending',
     });
   } catch (error) {
-    console.error('Enrollment transaction failed:', error);
-    if (error.message && error.message.includes('Batch capacity limit reached')) {
-      return res.status(409).json({ message: 'Batch capacity limit reached' });
-    }
-    return res.status(500).json({ message: error.message || 'Failed to process enrollment' });
+    return handleError(res, error);
   }
 };
 
 export const dropEnrollment = async (req, res) => {
   try {
-    const studentId = req.user.id;
-    const { id: enrollmentId } = req.params;
-    const { reason } = req.body;
+    const enrollmentId = toId(req.params.id);
+    if (!enrollmentId) return res.status(400).json({ success: false, message: 'Invalid enrollment id' });
 
-    if (!reason) {
-      return res.status(400).json({ message: 'Drop reason is required' });
+    // req.body is undefined in Express 5 when no body is sent (F22)
+    const { reason } = req.body ?? {};
+    if (reason !== undefined && (typeof reason !== 'string' || reason.length > 255)) {
+      return res.status(400).json({ success: false, message: 'reason must be text (max 255 characters)' });
     }
 
-    await dropEnrollmentInDb(enrollmentId, studentId, reason);
+    // ownership is enforced inside fn_drop_enrollment (X7)
+    await dropEnrollmentInDb(enrollmentId, req.user.id, reason);
 
     return res.status(200).json({
       success: true,
-      message: 'Enrollment dropped and seat released successfully'
+      message: 'Enrollment dropped and seat released successfully',
     });
   } catch (error) {
-    console.error('Error dropping enrollment:', error);
-    return res.status(500).json({ message: error.message || 'Failed to drop enrollment' });
+    return handleError(res, error);
   }
 };
 
 export const getMyEnrollments = async (req, res) => {
   try {
-    const studentId = req.user.id;
-    const enrollments = await getStudentEnrollmentsFromDb(studentId);
-    return res.status(200).json({ success: true, enrollments });
+    const paging = pagingFrom(req.valid?.query);
+    const result = await getStudentEnrollmentsFromDb(req.user.id, paging);
+    return res.status(200).json(listResponse('enrollments', result, paging));
   } catch (error) {
-    console.error('Error fetching student enrollments:', error);
-    return res.status(500).json({ message: 'Failed to fetch enrollments' });
+    return handleError(res, error);
   }
 };

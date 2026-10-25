@@ -1,22 +1,28 @@
 import { query } from '../config/db.js';
 
+/**
+ * fn_upsert_progress checks the enrollment is active/completed, the content
+ * belongs to its course, clamps watch time to [0, duration] and applies the
+ * 80 % rule. Ownership (enrollment belongs to the caller) is NOT checked here:
+ * use findEnrollmentById(...).student_id in the controller.
+ */
 export const upsertProgressInDb = async (enrollmentId, contentId, watchDuration, completed) => {
-  const sql = `SELECT fn_upsert_progress($1, $2, $3, $4) AS result`;
-  const { rows } = await query(sql, [enrollmentId, contentId, watchDuration, completed]);
-  return rows[0]?.result;
+  const sql = `SELECT fn_upsert_progress($1, $2, $3, $4)`;
+  await query(sql, [enrollmentId, contentId, watchDuration, completed]);
+  return true;
 };
 
 export const getContentDurationFromDb = async (contentId) => {
-  const sql = `SELECT content_id, duration_sec, module_id FROM course_contents WHERE content_id = $1`;
+  const sql = `SELECT content_id, duration_sec, module_id, type, status FROM content WHERE content_id = $1`;
   const { rows } = await query(sql, [contentId]);
   return rows[0];
 };
 
 export const getEnrollmentProgressFromDb = async (enrollmentId) => {
   const sql = `
-    SELECT cp.content_id, cp.watch_duration, cp.completed, cp.last_accessed_at
-    FROM content_progress cp
-    WHERE cp.enrollment_id = $1
+    SELECT p.content_id, p.watch_duration, p.completed, p.completed_at, p.last_accessed_at
+    FROM progress p
+    WHERE p.enrollment_id = $1
   `;
   const { rows } = await query(sql, [enrollmentId]);
   return rows;

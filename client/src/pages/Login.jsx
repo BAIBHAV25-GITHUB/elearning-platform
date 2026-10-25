@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { loginApi } from '../services/auth.service.js';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [searchParams] = useSearchParams();
+  // /login?reason=disabled is where the axios interceptor sends a user whose account was deactivated
+  const [error, setError] = useState(
+    searchParams.get('reason') === 'disabled' ? 'Your account is not active. Please contact support.' : ''
+  );
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -14,15 +17,11 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      const data = await loginApi({ email, password });
-      login(data.user, data.token);
-      
-      // Role-based redirect as required by Day 5 Roadmap
-      if (data.user.role === 'instructor' || data.user.role === 'admin') {
-        navigate('/instructor/dashboard');
-      } else {
-        navigate('/student/dashboard');
-      }
+      const user = await login(email, password);
+      // ?next=/courses/5 sends a guest back to the page they came from (same-site paths only)
+      const next = searchParams.get('next');
+      const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+      navigate(safeNext || (user.role === 'admin' ? '/admin' : user.role === 'instructor' ? '/instructor/courses' : '/'));
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
     }
@@ -31,23 +30,27 @@ export default function Login() {
   return (
     <div className="max-w-md mx-auto mt-16 p-6 bg-white rounded-xl shadow-md border">
       <h2 className="text-2xl font-bold mb-6 text-center">Login to EduStream</h2>
-      {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm">{error}</div>}
+      {error && <div role="alert" className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Email</label>
+          <label htmlFor="login-email" className="block text-sm font-medium mb-1">Email</label>
           <input
+            id="login-email"
             type="email"
             required
+            autoComplete="email"
             className="w-full border rounded px-3 py-2"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Password</label>
+          <label htmlFor="login-password" className="block text-sm font-medium mb-1">Password</label>
           <input
+            id="login-password"
             type="password"
             required
+            autoComplete="current-password"
             className="w-full border rounded px-3 py-2"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

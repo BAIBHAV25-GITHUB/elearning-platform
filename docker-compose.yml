@@ -1,0 +1,60 @@
+# One-command demo stack:   docker compose up --build      then open http://localhost:8080
+#
+# NOTE: this is a demo / local stack. It seeds demo users that all share a KNOWN password
+# (see README "Seed logins"). Do not expose it to the internet as it is.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: elearning_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d elearning_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/elearning_db
+      DB_SSL: "false"                 # the database container speaks plain TCP on a private network
+      # JWT_SECRET must be a real secret of 16+ characters. Set it in a .env file next to this one, e.g.
+      #   JWT_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))">
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (16+ characters, not "change-me")}
+      CLIENT_URL: http://localhost:8080
+      TRUST_PROXY: "1"                # nginx in front
+      # demo data: seeded only on the FIRST start, when the database is empty.
+      # Set SEED_DEMO_DATA=false and ALLOW_SEED_IN_PRODUCTION=0 for anything real.
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      ALLOW_SEED_IN_PRODUCTION: ${ALLOW_SEED_IN_PRODUCTION:-1}
+      # optional integrations: leave empty to run without uploads / payments
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    ports:
+      - "5000:5000"
+
+  client:
+    build:
+      context: ./client
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:

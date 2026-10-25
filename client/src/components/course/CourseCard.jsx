@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { formatPrice } from '../../utils/format';
 
 export default function CourseCard({ course }) {
   return (
@@ -14,7 +15,7 @@ export default function CourseCard({ course }) {
       </div>
       <div className="flex justify-between items-center pt-3 border-t">
         <span className="text-xl font-bold text-gray-900">
-          ${Number(course.price).toFixed(2)}
+          {formatPrice(course.price)}
         </span>
         <Link
           to={`/courses/${course.course_id}`}

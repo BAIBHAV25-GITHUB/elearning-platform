@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createCourseApi } from '../../services/course.service';
+import ApprovalBanner from '../../components/instructor/ApprovalBanner';
 
 export default function CreateCourse() {
   const [courseName, setCourseName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState(0);
+  const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -16,7 +18,7 @@ export default function CreateCourse() {
     setLoading(true);
 
     try {
-      await createCourseApi({ courseName, description, price: Number(price) });
+      await createCourseApi({ courseName, description, price: Number(price), thumbnailUrl: thumbnailUrl.trim() || undefined });
       navigate('/instructor/courses');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create course');
@@ -28,12 +30,14 @@ export default function CreateCourse() {
   return (
     <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-xl shadow border">
       <h1 className="text-2xl font-bold mb-6">Create New Course</h1>
+      <ApprovalBanner />
       {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm">{error}</div>}
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Course Title</label>
+          <label htmlFor="course-title" className="block text-sm font-medium mb-1">Course Title</label>
           <input
+            id="course-title"
             type="text"
             required
             className="w-full border rounded px-3 py-2"
@@ -44,8 +48,9 @@ export default function CreateCourse() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Description</label>
+          <label htmlFor="course-description" className="block text-sm font-medium mb-1">Description</label>
           <textarea
+            id="course-description"
             rows="4"
             className="w-full border rounded px-3 py-2"
             value={description}
@@ -55,8 +60,9 @@ export default function CreateCourse() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Price (USD / INR)</label>
+          <label htmlFor="course-price" className="block text-sm font-medium mb-1">Price (INR, 0 for free)</label>
           <input
+            id="course-price"
             type="number"
             min="0"
             step="0.01"
@@ -64,6 +70,18 @@ export default function CreateCourse() {
             className="w-full border rounded px-3 py-2"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="course-thumbnail" className="block text-sm font-medium mb-1">Thumbnail image URL (optional)</label>
+          <input
+            id="course-thumbnail"
+            type="url"
+            className="w-full border rounded px-3 py-2"
+            value={thumbnailUrl}
+            onChange={(e) => setThumbnailUrl(e.target.value)}
+            placeholder="https://..."
           />
         </div>
 
