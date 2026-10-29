@@ -1,4 +1,4 @@
-# EduStream
+\i# EduStream
 
 An e-learning platform: instructors publish courses (video, PDF and text lessons) with scheduled batches, students
 enrol and pay through Razorpay, learn in a player that remembers where they stopped, and receive a verifiable
